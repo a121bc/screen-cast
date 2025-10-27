@@ -1,0 +1,17 @@
+[package]
+name = "network"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["win32", "runtime"]
+win32 = ["dep:windows", "shared/win32"]
+runtime = ["dep:tokio", "shared/runtime"]
+
+[dependencies]
+shared = { path = "../shared", default-features = false }
+tracing = { workspace = true }
+tokio = { workspace = true, optional = true }
+windows = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

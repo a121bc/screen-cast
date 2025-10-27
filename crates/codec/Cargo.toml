@@ -1,0 +1,14 @@
+[package]
+name = "codec"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["win32"]
+win32 = ["dep:windows", "shared/win32"]
+
+[dependencies]
+shared = { path = "../shared", default-features = false, features = ["win32"] }
+tracing = { workspace = true }
+windows = { workspace = true, optional = true }
+serde = { workspace = true }

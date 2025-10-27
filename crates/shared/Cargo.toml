@@ -1,0 +1,20 @@
+[package]
+name = "shared"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["win32"]
+win32 = ["dep:windows"]
+runtime = ["dep:tokio"]
+ui = ["dep:egui", "dep:eframe"]
+media-foundation = ["win32"]
+
+[dependencies]
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true, optional = true }
+egui = { workspace = true, optional = true }
+eframe = { workspace = true, optional = true }
+windows = { workspace = true, optional = true }

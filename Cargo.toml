@@ -1,0 +1,38 @@
+[workspace]
+members = [
+    "crates/shared",
+    "crates/capture",
+    "crates/codec",
+    "crates/network",
+    "bins/sender",
+    "bins/receiver",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.72"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.37", features = ["macros", "rt-multi-thread", "sync", "time"], optional = true }
+egui = { version = "0.26", optional = true }
+eframe = { version = "0.26", optional = true, default-features = false, features = ["wgpu", "default_fonts"] }
+windows = { version = "0.54", default-features = false, optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Memory",
+    "Win32_System_SystemServices",
+    "Win32_System_WindowsProgramming",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Media_MediaFoundation",
+] }
