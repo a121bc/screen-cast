@@ -9,7 +9,7 @@ This repository hosts a Rust workspace that targets Windows and provides a modul
 ├── Cargo.toml
 ├── README.md
 ├── crates
-│   ├── capture       # Media Foundation capture abstractions
+│   ├── capture       # DXGI desktop duplication capture pipeline
 │   ├── codec         # Encoder/decoder primitives and format negotiation
 │   ├── network       # Tokio-powered networking utilities
 │   └── shared        # Cross-cutting types, logging, and configuration
@@ -27,9 +27,18 @@ The workspace configures shared optional dependencies and features that are enab
 - **Win32 bindings** via the [`windows`](https://crates.io/crates/windows) crate for calling native APIs.
 - **Asynchronous runtime** provided by [`tokio`](https://crates.io/crates/tokio).
 - **UI rendering** through [`egui`](https://crates.io/crates/egui)`/`[`eframe`](https://crates.io/crates/eframe) for building control surfaces.
-- **Media Foundation** functionality surfaced through Windows API bindings for efficient media capture and pipeline configuration.
+- **Desktop Duplication (DXGI)** bindings used to obtain per-frame BGRA surfaces from the Windows compositor.
 
 Feature flags are defined in each crate to make platform capabilities explicit and allow binaries to opt into the functionality they require.
+
+## Desktop duplication requirements
+
+The DXGI-based capture pipeline requires a Windows environment that exposes the Desktop Duplication API:
+
+- Windows 8.1 or newer with GPU drivers that implement WDDM 1.2 or later (Windows 10 is recommended).
+- An interactive desktop session; running as a service, over Remote Desktop without console access, or on a locked workstation will cause DXGI to report `ACCESS_DENIED` or `ACCESS_LOST` errors.
+- No protected content in the capture region. The compositor masks protected surfaces before duplication and DXGI will surface `ProtectedContentMaskedOut` in the frame metadata.
+- Sufficient GPU resources to create a D3D11 device with BGRA support. The crate falls back to recreating the duplication session when the device is removed or reset.
 
 ## Development
 
@@ -45,7 +54,7 @@ Static analysis tooling is provided via `rustfmt` and `clippy` configuration fil
 
 The current code establishes the workspace skeleton, shared error handling, logging, and placeholder APIs across crates. Implementation efforts can now focus on:
 
-1. Integrating real Media Foundation capture pipelines in `capture`.
+1. Hardening the DXGI desktop duplication pipeline in `capture` with batching, cursor composition, and colour-space controls.
 2. Wiring up encoder/decoder logic in `codec`.
 3. Implementing robust network transport in `network`.
 4. Building interactive user interfaces for the sender/receiver binaries.
