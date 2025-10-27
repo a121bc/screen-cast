@@ -3,8 +3,11 @@
 #[cfg(not(target_os = "windows"))]
 compile_error!("The codec crate currently only supports Windows targets.");
 
-use serde::{Deserialize, Serialize};
-use shared::{AppError, AppResult};
+#[cfg(feature = "win32")]
+pub mod h264;
+
+pub use serde::{Deserialize, Serialize};
+pub use shared::{AppError, AppResult};
 use tracing::instrument;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
