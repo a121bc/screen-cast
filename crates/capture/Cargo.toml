@@ -4,11 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["media-foundation"]
+default = ["dxgi", "runtime"]
 win32 = ["dep:windows", "shared/win32"]
-media-foundation = ["win32", "shared/media-foundation"]
+runtime = ["dep:tokio", "dep:tokio-stream", "shared/runtime"]
+dxgi = ["win32"]
 
 [dependencies]
 shared = { path = "../shared", default-features = false }
 tracing = { workspace = true }
 windows = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true }
