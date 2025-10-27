@@ -1,0 +1,11 @@
+[package]
+name = "receiver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+codec = { path = "../../crates/codec" }
+network = { path = "../../crates/network" }
+shared = { path = "../../crates/shared", default-features = false, features = ["win32", "runtime", "ui"] }
+tokio = { workspace = true }
+tracing = { workspace = true }

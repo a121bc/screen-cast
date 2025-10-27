@@ -1,0 +1,14 @@
+[package]
+name = "capture"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["media-foundation"]
+win32 = ["dep:windows", "shared/win32"]
+media-foundation = ["win32", "shared/media-foundation"]
+
+[dependencies]
+shared = { path = "../shared", default-features = false }
+tracing = { workspace = true }
+windows = { workspace = true, optional = true }
