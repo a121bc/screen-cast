@@ -1,18 +1,18 @@
 use shared::{AppError, AppResult};
+use std::collections::VecDeque;
 use std::sync::Arc;
-use tracing::{debug, instrument, trace};
+use tracing::{debug, instrument, trace, warn};
 use windows::core::{Interface, GUID, HRESULT};
 use windows::Win32::Foundation::{E_FAIL, S_OK};
 use windows::Win32::Media::MediaFoundation::{
     IMFActivate, IMFAttributes, IMFMediaBuffer, IMFMediaType, IMFSample, IMFTransform,
     MFCreateAttributes, MFCreateMemoryBuffer, MFCreateSample, MFEnumTransforms, MFShutdown,
-    MFStartup, MFTEnumFlag, MFTGetInfo, MFT_CATEGORY_VIDEO_ENCODER, MFT_ENUM_FLAG_ALL,
-    MFT_ENUM_FLAG_SORTANDFILTER, MFT_INPUT_STREAM_INFO, MFT_OUTPUT_DATA_BUFFER,
-    MFT_OUTPUT_STREAM_INFO, MFT_PROCESS_OUTPUT_STATUS_NEW_STREAMS, MFSTARTUP_FULL,
-    MF_LOW_LATENCY, MF_MT_AVG_BITRATE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE,
-    MF_MT_INTERLACE_MODE, MF_MT_MAJOR_TYPE, MF_MT_MPEG2_PROFILE, MF_MT_SUBTYPE,
-    MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, MFMediaType_Video, MFVideoInterlace_Progressive,
-    MFVideoInterlaceMode,
+    MFStartup, MFTEnumFlag, MFTGetInfo, MFT_CATEGORY_VIDEO_DECODER, MFT_CATEGORY_VIDEO_ENCODER,
+    MFT_ENUM_FLAG_ALL, MFT_ENUM_FLAG_SORTANDFILTER, MFT_INPUT_STREAM_INFO, MFT_OUTPUT_DATA_BUFFER,
+    MFT_OUTPUT_STREAM_INFO, MFT_PROCESS_OUTPUT_STATUS_NEW_STREAMS, MFSTARTUP_FULL, MF_LOW_LATENCY,
+    MF_MT_AVG_BITRATE, MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE, MF_MT_INTERLACE_MODE, MF_MT_MAJOR_TYPE,
+    MF_MT_MPEG2_PROFILE, MF_MT_SUBTYPE, MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, MFMediaType_Video,
+    MFVideoInterlace_Progressive, MFVideoInterlaceMode,
 };
 use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
@@ -580,3 +580,406 @@ pub const NAL_TYPE_SPS: u8 = 7;
 pub const NAL_TYPE_PPS: u8 = 8;
 pub const NAL_TYPE_IDR: u8 = 5;
 pub const NAL_TYPE_NON_IDR: u8 = 1;
+
+// ===== H.264 Decoder (Media Foundation) =====
+
+/// Decoder output mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecoderOutput {
+    /// CPU-accessible NV12 buffer (YUV420). Lowest overhead, widely supported.
+    CpuNv12,
+    /// CPU-accessible BGRA buffer. Supported if decoder exposes a color converter.
+    CpuBgra,
+    /// DXGI texture output (Windows-only). Requires D3D device manager wiring.
+    #[allow(dead_code)]
+    DxgiTexture,
+}
+
+/// Pixel format for decoded CPU frames
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecoderPixelFormat {
+    Nv12,
+    Bgra,
+}
+
+/// Drop policy when the internal frame buffer is full
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropPolicy {
+    DropOldest,
+    DropNewest,
+}
+
+/// Buffering configuration for frame queueing
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BufferingConfig {
+    pub max_frames: usize,
+    pub drop_policy: DropPolicy,
+}
+
+impl Default for BufferingConfig {
+    fn default() -> Self {
+        Self {
+            max_frames: 4,
+            drop_policy: DropPolicy::DropOldest,
+        }
+    }
+}
+
+/// Decoder configuration
+#[derive(Debug, Clone)]
+pub struct H264DecoderConfig {
+    pub output: DecoderOutput,
+    pub buffering: BufferingConfig,
+}
+
+impl Default for H264DecoderConfig {
+    fn default() -> Self {
+        Self {
+            output: DecoderOutput::CpuNv12,
+            buffering: BufferingConfig::default(),
+        }
+    }
+}
+
+/// Video format descriptor used for reconfiguration events
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VideoFormat {
+    pub width: u32,
+    pub height: u32,
+    pub pixel_format: DecoderPixelFormat,
+    pub stride: u32,
+}
+
+/// Decoded frame in CPU memory
+#[derive(Debug, Clone)]
+pub struct DecodedFrame {
+    pub data: Vec<u8>,
+    pub timestamp: i64,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub pixel_format: DecoderPixelFormat,
+    /// Indicates if the decoded output corresponds to an IDR/keyframe
+    pub is_keyframe: bool,
+}
+
+/// Decoder event stream items
+#[derive(Debug, Clone)]
+pub enum DecoderEvent {
+    Reconfigured(VideoFormat),
+}
+
+/// Output item from decoder polling
+#[derive(Debug, Clone)]
+pub enum DecodeOutput {
+    Frame(DecodedFrame),
+    Event(DecoderEvent),
+}
+
+/// Windows Media Foundation H.264 decoder (NAL in -> frames out)
+pub struct H264Decoder {
+    transform: IMFTransform,
+    current_format: VideoFormat,
+    cfg: H264DecoderConfig,
+    queue: VecDeque<DecodeOutput>,
+    _mf_context: Arc<MfContext>,
+}
+
+impl H264Decoder {
+    #[instrument]
+    pub fn new(cfg: H264DecoderConfig) -> AppResult<Self> {
+        let mf = Arc::new(MfContext::new()?);
+        let transform = Self::create_h264_decoder(&cfg)?;
+        let fmt = Self::negotiate_output_format(&transform, cfg.output)?;
+
+        unsafe {
+            if let Ok(attrs) = transform.GetAttributes() {
+                let _ = attrs.SetUINT32(&MF_LOW_LATENCY, 1);
+                let _ = attrs.SetUINT32(&MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1);
+            }
+            // MFT_MESSAGE_COMMAND_FLUSH (0x00000001) and START OF STREAM (0x00000002) aren't
+            // strictly necessary here; many decoders accept streaming immediately.
+            let _ = transform.ProcessMessage(0, 0);
+        }
+
+        Ok(Self {
+            transform,
+            current_format: fmt,
+            cfg,
+            queue: VecDeque::new(),
+            _mf_context: mf,
+        })
+    }
+
+    fn create_h264_decoder(cfg: &H264DecoderConfig) -> AppResult<IMFTransform> {
+        unsafe {
+            let input_type = MFMediaType_Video;
+            let output_type = MFMediaType_Video;
+
+            let mut attributes: Option<IMFAttributes> = None;
+            MFCreateAttributes(&mut attributes, 1)
+                .map_err(|_| AppError::MediaFoundation("Failed to create attributes"))?;
+            let attrs = attributes.ok_or(AppError::MediaFoundation("Attributes is null"))?;
+
+            // Prefer hardware transforms when available
+            let _ = attrs.SetUINT32(&MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1);
+
+            let mut activates: *mut Option<IMFActivate> = std::ptr::null_mut();
+            let mut count = 0u32;
+
+            MFEnumTransforms(
+                &MFT_CATEGORY_VIDEO_DECODER,
+                MFTEnumFlag(MFT_ENUM_FLAG_ALL | MFT_ENUM_FLAG_SORTANDFILTER),
+                Some(&input_type),
+                Some(&output_type),
+                Some(&attrs),
+                &mut activates,
+                &mut count,
+            )
+            .map_err(|_| AppError::MediaFoundation("Failed to enumerate decoders"))?;
+
+            if count == 0 || activates.is_null() {
+                return Err(AppError::MediaFoundation("No H264 decoder found"));
+            }
+
+            let activates_slice = std::slice::from_raw_parts(activates, count as usize);
+            for activate in activates_slice {
+                if let Some(act) = activate {
+                    if let Ok(transform) = act.ActivateObject::<IMFTransform>() {
+                        // We may later inspect transform attributes to ensure H.264 support.
+                        return Ok(transform);
+                    }
+                }
+            }
+
+            Err(AppError::MediaFoundation("Failed to activate H264 decoder"))
+        }
+    }
+
+    fn negotiate_output_format(transform: &IMFTransform, output: DecoderOutput) -> AppResult<VideoFormat> {
+        // Configure input type as H.264 bitstream
+        unsafe {
+            let in_type: IMFMediaType = windows::Win32::Media::MediaFoundation::MFCreateMediaType()
+                .map_err(|_| AppError::MediaFoundation("Failed to create input media type"))?;
+            in_type
+                .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)
+                .map_err(|_| AppError::MediaFoundation("Failed to set input major type"))?;
+            let h264_subtype = GUID::from_u128(0x34363248_0000_0010_8000_00aa00389b71); // 'H264'
+            in_type
+                .SetGUID(&MF_MT_SUBTYPE, &h264_subtype)
+                .map_err(|_| AppError::MediaFoundation("Failed to set H264 subtype for input"))?;
+            transform
+                .SetInputType(0, &in_type, 0)
+                .map_err(|_| AppError::MediaFoundation("Failed to set decoder input type"))?;
+        }
+
+        // Configure output media type according to desired output
+        let (subtype, pixel_format) = match output {
+            DecoderOutput::CpuNv12 => (
+                GUID::from_u128(0x3231564E_0000_0010_8000_00aa00389b71), // NV12
+                DecoderPixelFormat::Nv12,
+            ),
+            DecoderOutput::CpuBgra => (
+                GUID::from_u128(0x42475241_0000_0010_8000_00aa00389b71), // BGRA/ARGB32
+                DecoderPixelFormat::Bgra,
+            ),
+            DecoderOutput::DxgiTexture => (
+                GUID::from_u128(0x3231564E_0000_0010_8000_00aa00389b71), // still request NV12; DXGI path not wired
+                DecoderPixelFormat::Nv12,
+            ),
+        };
+
+        unsafe {
+            let out_type: IMFMediaType = windows::Win32::Media::MediaFoundation::MFCreateMediaType()
+                .map_err(|_| AppError::MediaFoundation("Failed to create output media type"))?;
+            out_type
+                .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)
+                .map_err(|_| AppError::MediaFoundation("Failed to set output major type"))?;
+            out_type
+                .SetGUID(&MF_MT_SUBTYPE, &subtype)
+                .map_err(|_| AppError::MediaFoundation("Failed to set output subtype"))?;
+
+            // Don't specify frame size here; the decoder will establish it from bitstream SPS.
+            transform
+                .SetOutputType(0, &out_type, 0)
+                .map_err(|_| AppError::MediaFoundation("Failed to set decoder output type"))?;
+        }
+
+        // Unknown until first output; use 0 to signal "uninitialized".
+        Ok(VideoFormat { width: 0, height: 0, pixel_format, stride: 0 })
+    }
+
+    #[instrument(skip(self, nal_data))]
+    pub fn push_nal(&mut self, nal_data: &[u8], timestamp_100ns: i64) -> AppResult<()> {
+        // Backpressure via buffering policy is handled after outputs are produced.
+        let sample = Self::create_nal_sample(nal_data, timestamp_100ns)?;
+        self.process_input(sample)?;
+        self.drain_outputs()?;
+        Ok(())
+    }
+
+    #[instrument]
+    pub fn try_get_output(&mut self) -> AppResult<Option<DecodeOutput>> {
+        if let Some(item) = self.queue.pop_front() {
+            return Ok(Some(item));
+        }
+        // Attempt to produce one output from decoder
+        match self.process_output()? {
+            Some(item) => Ok(Some(item)),
+            None => Ok(None),
+        }
+    }
+
+    #[instrument]
+    pub fn drain(&mut self) -> AppResult<()> {
+        loop {
+            match self.process_output()? {
+                Some(item) => self.enqueue(item),
+                None => break,
+            }
+        }
+        Ok(())
+    }
+
+    fn enqueue(&mut self, item: DecodeOutput) {
+        if self.queue.len() < self.cfg.buffering.max_frames || self.cfg.buffering.max_frames == 0 {
+            self.queue.push_back(item);
+            return;
+        }
+        match self.cfg.buffering.drop_policy {
+            DropPolicy::DropOldest => {
+                let _ = self.queue.pop_front();
+                self.queue.push_back(item);
+            }
+            DropPolicy::DropNewest => {
+                // Drop the new item, keep existing queue intact
+            }
+        }
+    }
+
+    fn create_nal_sample(nal_data: &[u8], timestamp_100ns: i64) -> AppResult<IMFSample> {
+        unsafe {
+            let buffer: IMFMediaBuffer = MFCreateMemoryBuffer(nal_data.len() as u32)
+                .map_err(|_| AppError::MediaFoundation("Failed to create NAL buffer"))?;
+            let mut ptr: *mut u8 = std::ptr::null_mut();
+            buffer
+                .Lock(&mut ptr, None, None)
+                .map_err(|_| AppError::MediaFoundation("Failed to lock NAL buffer"))?;
+            std::ptr::copy_nonoverlapping(nal_data.as_ptr(), ptr, nal_data.len());
+            buffer
+                .Unlock()
+                .map_err(|_| AppError::MediaFoundation("Failed to unlock NAL buffer"))?;
+            buffer
+                .SetCurrentLength(nal_data.len() as u32)
+                .map_err(|_| AppError::MediaFoundation("Failed to set NAL buffer length"))?;
+
+            let sample: IMFSample = MFCreateSample()
+                .map_err(|_| AppError::MediaFoundation("Failed to create input sample"))?;
+            sample
+                .AddBuffer(&buffer)
+                .map_err(|_| AppError::MediaFoundation("Failed to add buffer to sample"))?;
+            let _ = sample.SetSampleTime(timestamp_100ns);
+            Ok(sample)
+        }
+    }
+
+    fn process_input(&self, sample: IMFSample) -> AppResult<()> {
+        unsafe {
+            self.transform
+                .ProcessInput(0, &sample, 0)
+                .map_err(|_| AppError::MediaFoundation("Decoder ProcessInput failed"))?;
+        }
+        Ok(())
+    }
+
+    fn process_output(&mut self) -> AppResult<Option<DecodeOutput>> {
+        unsafe {
+            let mut out = MFT_OUTPUT_DATA_BUFFER { dwStreamID: 0, pSample: None, dwStatus: 0, pEvents: None };
+            let mut status = 0u32;
+            let hr = self.transform.ProcessOutput(0, 1, &mut out, &mut status);
+            if hr.is_err() {
+                let code = hr.0 as u32;
+                if code == 0xC00D6D72 { // MF_E_TRANSFORM_NEED_MORE_INPUT
+                    return Ok(None);
+                }
+                return Err(AppError::MediaFoundation("Decoder ProcessOutput failed"));
+            }
+
+            if status & MFT_PROCESS_OUTPUT_STATUS_NEW_STREAMS.0 != 0 {
+                // A format change has occurred. Re-read current output type.
+                if let Ok(fmt) = self.read_current_format() {
+                    self.current_format = fmt;
+                    return Ok(Some(DecodeOutput::Event(DecoderEvent::Reconfigured(fmt))));
+                }
+            }
+
+            let sample = match out.pSample {
+                Some(s) => s,
+                None => return Ok(None),
+            };
+
+            // Determine keyframe by scanning NAL units in input is non-trivial here; fall back to false.
+            let timestamp = sample.GetSampleTime().unwrap_or(0);
+            let frame = self.extract_cpu_frame(&sample, timestamp)?;
+            Ok(Some(DecodeOutput::Frame(frame)))
+        }
+    }
+
+    fn read_current_format(&self) -> AppResult<VideoFormat> {
+        unsafe {
+            let out_type = self
+                .transform
+                .GetOutputCurrentType(0)
+                .map_err(|_| AppError::MediaFoundation("Failed to get current output type"))?;
+
+            let mut frame_size: u64 = 0;
+            out_type
+                .GetUINT64(&MF_MT_FRAME_SIZE, &mut frame_size)
+                .ok();
+            let width = (frame_size >> 32) as u32;
+            let height = (frame_size & 0xffffffff) as u32;
+
+            // Stride is not guaranteed; estimate as width for tightly packed formats.
+            let stride = width;
+
+            Ok(VideoFormat { width, height, pixel_format: self.current_format.pixel_format, stride })
+        }
+    }
+
+    fn extract_cpu_frame(&mut self, sample: &IMFSample, timestamp: i64) -> AppResult<DecodedFrame> {
+        unsafe {
+            let buffer: IMFMediaBuffer = sample
+                .GetBufferByIndex(0)
+                .map_err(|_| AppError::MediaFoundation("Failed to get output buffer"))?;
+            let mut ptr: *mut u8 = std::ptr::null_mut();
+            let mut length = 0u32;
+            buffer
+                .Lock(&mut ptr, None, Some(&mut length))
+                .map_err(|_| AppError::MediaFoundation("Failed to lock output buffer"))?;
+
+            let bytes = std::slice::from_raw_parts(ptr, length as usize).to_vec();
+            buffer
+                .Unlock()
+                .map_err(|_| AppError::MediaFoundation("Failed to unlock output buffer"))?;
+
+            // Update current format lazily if unknown
+            if self.current_format.width == 0 || self.current_format.height == 0 {
+                if let Ok(fmt) = self.read_current_format() {
+                    self.current_format = fmt;
+                }
+            }
+
+            Ok(DecodedFrame {
+                data: bytes,
+                timestamp,
+                width: self.current_format.width,
+                height: self.current_format.height,
+                stride: if self.current_format.stride != 0 { self.current_format.stride } else { self.current_format.width },
+                pixel_format: self.current_format.pixel_format,
+                is_keyframe: false,
+            })
+        }
+    }
+}
+
+unsafe impl Send for H264Decoder {}

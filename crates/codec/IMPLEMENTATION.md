@@ -1,6 +1,6 @@
-# H.264 Encoder Implementation Details
+# H.264 Encoder/Decoder Implementation Details
 
-This document describes the technical implementation of the Windows Media Foundation H.264 encoder.
+This document describes the technical implementation of the Windows Media Foundation H.264 encoder and decoder.
 
 ## Architecture
 
@@ -269,9 +269,65 @@ Encoded streams should be validated with:
 - H.264 conformance checker
 - Decoder compatibility tests
 
+## H.264 Decoder
+
+### Overview
+
+The H.264 decoder is implemented using a Media Foundation Transform (MFT) in the `MFT_CATEGORY_VIDEO_DECODER` category. It accepts Annex-B NAL unit streams as input and produces decoded video frames in CPU-accessible formats (NV12 or BGRA). DXGI texture output is part of the public API but requires D3D11 device manager setup and is not wired in this iteration.
+
+### Initialization Flow
+
+```
+H264Decoder::new()
+  ├─> MfContext::new() // COM + MF startup
+  ├─> create_h264_decoder() // enumerate and activate decoder MFT
+  ├─> negotiate_output_format()
+  │     ├─> SetInputType(MFVideoFormat_H264)
+  │     └─> SetOutputType(NV12 or BGRA)
+  └─> Set low-latency attributes
+```
+
+### Decoding Flow
+
+```
+push_nal(nal, ts)
+  ├─> Create input IMFSample with IMFMediaBuffer
+  ├─> SetSampleTime(ts)  // timestamp passthrough
+  ├─> ProcessInput()
+  └─> drain_outputs()
+        └─> ProcessOutput() loop
+              ├─> MFT_PROCESS_OUTPUT_STATUS_NEW_STREAMS => format change event
+              ├─> Extract buffer bytes
+              └─> Build DecodedFrame { data, width, height, stride, timestamp }
+```
+
+### Reconfiguration (Resolution Changes)
+
+The decoder monitors `MFT_PROCESS_OUTPUT_STATUS_NEW_STREAMS` and re-reads the current output type to update frame size. A `DecoderEvent::Reconfigured(VideoFormat)` is emitted before frames with the new format.
+
+### Buffering Strategy
+
+An internal `VecDeque<DecodeOutput>` is used to queue frames/events. `BufferingConfig` allows:
+
+- `max_frames`: bound the queue size (0 for unbounded)
+- `drop_policy`: `DropOldest` (default) or `DropNewest`
+
+When the queue is full, the chosen policy is applied to bound latency.
+
+### Timestamp Passthrough
+
+Input sample timestamps are propagated to output frames via `IMFSample::SetSampleTime` / `GetSampleTime`. Timestamps are expressed in 100-nanosecond units to align with Media Foundation.
+
+### Limitations
+
+- DXGI texture output requires D3D11 device manager configuration; not implemented yet.
+- BGRA output depends on decoder + color converter support; NV12 is the most broadly supported CPU output.
+- Keyframe detection is not exposed by the decoder MFT; `is_keyframe` is reported as false currently.
+
 ## References
 
 - [Microsoft Media Foundation Documentation](https://docs.microsoft.com/en-us/windows/win32/medfound/microsoft-media-foundation-sdk)
 - [H.264 Encoder MFT](https://docs.microsoft.com/en-us/windows/win32/medfound/h-264-video-encoder)
+- [H.264 Decoder MFT](https://learn.microsoft.com/en-us/windows/win32/medfound/h-264-video-decoder)
 - [ITU-T H.264 Specification](https://www.itu.int/rec/T-REC-H.264)
 - [Windows crate documentation](https://docs.rs/windows/)
