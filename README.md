@@ -163,3 +163,7 @@ Each `MetricsSnapshot` reports frames-per-second, average/max end-to-end latency
 ### Rendering surface
 
 Frames are decoded into BGRA surfaces and uploaded to an `eframe` texture backed by `wgpu`. The render queue trims stale frames before presentation to prevent latency runaway, and the UI closes automatically when the optional frame limit is reached.
+
+## Performance benchmarking and profiling
+
+Synthetic latency and jitter validation is provided via the `perf_harness` binary and companion scripts. The harness uses deterministic simulations to exercise multiple bitrate/resolution combinations and emits JSON/Markdown summaries under `benchmarks/results/`. See [`docs/performance/`](docs/performance/README.md) for setup instructions, scenario customisation, and the latest benchmark highlights demonstrating compliance with the sub-500 ms latency target.

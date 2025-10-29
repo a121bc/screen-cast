@@ -43,6 +43,7 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
 use windows::Win32::System::Ole::RPC_E_CHANGED_MODE;
+use windows::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_ABOVE_NORMAL};
 
 #[cfg(feature = "runtime")]
 use std::task::{Context, Poll};
@@ -293,6 +294,17 @@ impl Drop for FrameStream {
 }
 
 #[cfg(feature = "runtime")]
+fn boost_capture_thread_priority() {
+    unsafe {
+        if !SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL).as_bool() {
+            warn!("failed to raise capture thread priority to above normal");
+        } else {
+            trace!("capture thread priority raised to above normal");
+        }
+    }
+}
+
+#[cfg(feature = "runtime")]
 #[instrument]
 fn spawn_capture_thread(config: CaptureConfig, monitor: MonitorDescriptor) -> AppResult<FrameStream> {
     let (tx, rx) = mpsc::unbounded_channel();
@@ -302,6 +314,7 @@ fn spawn_capture_thread(config: CaptureConfig, monitor: MonitorDescriptor) -> Ap
     thread::Builder::new()
         .name("dxgi-capture".into())
         .spawn(move || {
+            boost_capture_thread_priority();
             if let Err(err) = run_capture_loop(config, monitor, cancel_flag, tx.clone()) {
                 let _ = tx.send(Err(err));
             }

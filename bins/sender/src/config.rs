@@ -13,7 +13,7 @@ use shared::{AppError, AppResult};
 
 pub(crate) const DEFAULT_FRAME_RATE: u32 = 60;
 const DEFAULT_METRICS_INTERVAL_SECS: u64 = 5;
-const DEFAULT_CHANNEL_CAPACITY: usize = 4;
+const DEFAULT_CHANNEL_CAPACITY: usize = 6;
 const DEFAULT_RETRY_ATTEMPTS: usize = 5;
 const DEFAULT_RETRY_BACKOFF_MS: u64 = 1_000;
 const DEFAULT_BITRATE_LOW: u32 = 4_000_000;
