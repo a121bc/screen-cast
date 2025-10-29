@@ -9,4 +9,8 @@ codec = { path = "../../crates/codec" }
 network = { path = "../../crates/network" }
 shared = { path = "../../crates/shared", default-features = false, features = ["win32", "runtime", "ui"] }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { version = "4.5", features = ["derive"] }
