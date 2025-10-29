@@ -105,6 +105,18 @@ Launch with `cargo run -p sender -- --config sender.json` and any CLI flags will
 
 The pipeline logs frames-per-second along with average and worst-case encode time at the interval configured through `metrics.log_interval_secs` (defaults to 5 seconds). Aggregate counters covering transmitted frames, capture errors, and dropped frames are emitted when the pipeline shuts down.
 
+### Graphical control surface
+
+Launch the interactive control surface with:
+
+```bash
+cargo run -p sender -- --gui
+```
+
+The `egui` window exposes start/stop controls, lets you edit the network target, choose from common resolution presets (or supply a custom override), and switch between bitrate presets. Live plots visualise frames-per-second and encode latency so you can watch the pipeline stabilise in real time, while the status pane reports capture warnings and pipeline errors. The layout has been exercised at common Windows scale factors (100%, 150%, and 200%) to ensure controls remain legible.
+
+CLI mode remains the default; omit `--gui` to run the sender headlessly with the existing command-line arguments.
+
 ### Testing with mocks
 
 A mock capture harness is available via `cargo test -p sender`. The integration test toggles the `--use-mocks` pathway to validate that frames flow through capture, scaling, encoding, and transport stages without touching real hardware.

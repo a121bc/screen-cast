@@ -63,6 +63,10 @@ pub struct CliArgs {
     /// When using mocks, limit the number of frames to emit before shutting down.
     #[arg(long, value_name = "COUNT")]
     pub mock_frames: Option<usize>,
+
+    /// Launch the interactive GUI instead of running headless.
+    #[arg(long)]
+    pub gui: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

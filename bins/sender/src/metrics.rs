@@ -7,7 +7,9 @@ pub enum MetricEvent {
     Frame {
         encode_latency: Duration,
     },
-    CaptureError,
+    CaptureError {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone)]
