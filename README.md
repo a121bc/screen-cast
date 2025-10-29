@@ -108,3 +108,58 @@ The pipeline logs frames-per-second along with average and worst-case encode tim
 ### Testing with mocks
 
 A mock capture harness is available via `cargo test -p sender`. The integration test toggles the `--use-mocks` pathway to validate that frames flow through capture, scaling, encoding, and transport stages without touching real hardware.
+
+## Receiver pipeline
+
+The `receiver` binary assembles the complementary pipeline that consumes UDP packets, smooths jitter, decodes frame payloads, and renders the output using `eframe`/`wgpu`. The video path is designed to keep end-to-end latency under 500 ms by aggressively trimming the render queue and dropping frames that exceed the configured latency budget.
+
+### Running the receiver
+
+On a Windows host, start the pipeline with:
+
+```bash
+cargo run -p receiver -- \
+    --address 192.168.0.42:5000 \
+    --render-queue 6 \
+    --max-latency 450
+```
+
+Notable CLI options:
+
+- `--config <PATH>` – load a JSON configuration file.
+- `--address HOST:PORT` / `--bind HOST:PORT` – set the remote endpoint and optional local bind address.
+- `--jitter-capacity <FRAMES>` – cap the negotiated jitter buffer.
+- `--decode-queue <FRAMES>` / `--render-queue <FRAMES>` – tune internal buffering stages.
+- `--max-latency <MILLISECONDS>` – drop frames that would exceed the latency budget (defaults to 500 ms).
+- `--width <PIXELS>` / `--height <PIXELS>` – declare the expected frame geometry (used for texture creation).
+- `--refresh-rate <HZ>` – hint the presentation cadence (defaults to 60 Hz).
+- `--frame-limit <COUNT>` – stop the pipeline after presenting a fixed number of frames (useful for integration tests).
+
+A sample configuration file `receiver.json`:
+
+```json
+{
+  "network": { "address": "127.0.0.1:5000", "bind": "0.0.0.0:5000", "jitter_buffer_capacity": 48 },
+  "pipeline": { "decode_queue": 8, "render_queue": 6, "max_latency_ms": 400 },
+  "render": { "width": 1920, "height": 1080, "refresh_rate": 60, "window_title": "Streaming Receiver" },
+  "metrics": { "log_interval_secs": 5 }
+}
+```
+
+Launch the binary with `cargo run -p receiver -- --config receiver.json` (CLI flags continue to override file values).
+
+### Metrics and observability
+
+The receiver emits structured metrics every configured interval and also exposes a subscription API for integrations:
+
+```rust
+let pipeline = receiver::ReceiverPipeline::new(config)?;
+let metrics = pipeline.metrics_handle();
+let mut stream = metrics.subscribe();
+```
+
+Each `MetricsSnapshot` reports frames-per-second, average/max end-to-end latency, average/max queue latency, decode timings, and cumulative drop counts for the observation window. The UI overlays the latest latency and queue depth alongside the rendered video frame.
+
+### Rendering surface
+
+Frames are decoded into BGRA surfaces and uploaded to an `eframe` texture backed by `wgpu`. The render queue trims stale frames before presentation to prevent latency runaway, and the UI closes automatically when the optional frame limit is reached.
