@@ -4,18 +4,32 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use codec::Decoder;
-use network::{NetworkReceiver, ReceivedFrame};
+use network::{EndpointConfig, NetworkReceiver, ReceivedFrame};
 use shared::{AppError, AppResult};
-use tokio::sync::{mpsc, Mutex, Notify};
+use tokio::sync::{broadcast, mpsc, Mutex, Notify};
 use tokio::task::{JoinError, JoinSet};
-use tracing::{info, instrument, warn};
+use tracing::{debug, info, instrument, warn};
 
 use crate::config::{ReceiverConfig, RenderSettings};
 use crate::metrics::{MetricEvent, MetricsCollector, MetricsHub};
-use crate::render::{run_renderer, RenderFrame};
+use crate::render::{run_renderer, BufferingPresetConfig, RenderFrame};
 
 const NETWORK_BACKOFF: Duration = Duration::from_millis(15);
 const INVALID_FRAME_GRACE: Duration = Duration::from_millis(5);
+
+#[derive(Debug, Clone)]
+pub enum ControlEvent {
+    SelectSender { address: String },
+    SetBuffering { max_frames: usize, max_latency_ms: u64 },
+}
+
+#[derive(Debug, Clone)]
+pub enum PipelineStatus {
+    Connecting { address: String },
+    Connected { address: String },
+    ConnectionFailed { address: String, error: String },
+    Disconnected,
+}
 
 pub struct ReceiverPipeline {
     config: ReceiverConfig,
@@ -117,6 +131,36 @@ impl PipelineCounters {
     }
 }
 
+fn default_buffering_presets(config: &ReceiverConfig) -> Vec<BufferingPresetConfig> {
+    let base_queue = config.pipeline.render_queue.max(1);
+    let base_latency = config.pipeline.max_latency_ms.max(50);
+
+    let low_latency_queue = base_queue.min(2).max(1);
+    let low_latency_latency = (base_latency / 2).max(30);
+
+    let mut presets = Vec::new();
+    presets.push(BufferingPresetConfig::new(
+        "Low latency",
+        low_latency_queue,
+        low_latency_latency,
+    ));
+    presets.push(BufferingPresetConfig::new(
+        "Balanced",
+        base_queue,
+        base_latency,
+    ));
+
+    let high_queue = (base_queue * 2).max(base_queue + 1).min(64);
+    let high_latency = (base_latency * 2).min(2_000);
+    presets.push(BufferingPresetConfig::new(
+        "High jitter tolerance",
+        high_queue,
+        high_latency,
+    ));
+
+    presets
+}
+
 impl ReceiverPipeline {
     pub fn new(mut config: ReceiverConfig) -> AppResult<Self> {
         config.validate()?;
@@ -140,22 +184,44 @@ impl ReceiverPipeline {
 
         let expected_bytes = config.expected_frame_bytes();
         let metrics_interval = config.metrics_interval();
+        let sender_presets = config.sender_presets().to_vec();
+        let buffering_presets = default_buffering_presets(&config);
+        let initial_endpoint = config.endpoint_config();
+        let frame_limit = config.pipeline.frame_limit;
+        let render_settings = config.render.clone();
+        let ui_render_settings = render_settings.clone();
 
-        let (decode_tx, decode_rx) = mpsc::channel::<ReceivedFrame>(config.pipeline.decode_queue);
+        let (decode_tx, decode_rx) =
+            mpsc::channel::<ReceivedFrame>(config.pipeline.decode_queue);
         let (render_tx, render_rx) = mpsc::unbounded_channel::<RenderFrame>();
         let (metrics_tx, metrics_rx) = mpsc::unbounded_channel::<MetricEvent>();
+        let (control_tx, _) = broadcast::channel::<ControlEvent>(32);
+        let (status_tx, status_rx) = mpsc::unbounded_channel::<PipelineStatus>();
 
         let mut join_set = JoinSet::new();
 
         {
-            let receiver = NetworkReceiver::new(config.endpoint_config());
             let decode_tx = decode_tx.clone();
             let counters = Arc::clone(&counters);
             let metrics_tx = metrics_tx.clone();
             let running = Arc::clone(&running);
             let shutdown = Arc::clone(&shutdown);
+            let status_tx = status_tx.clone();
+            let control_tx = control_tx.clone();
+            let endpoint = initial_endpoint.clone();
             join_set.spawn(async move {
-                run_network_loop(receiver, decode_tx, counters, metrics_tx, running, shutdown).await
+                let control_rx = control_tx.subscribe();
+                run_network_loop(
+                    endpoint,
+                    decode_tx,
+                    counters,
+                    metrics_tx,
+                    control_rx,
+                    status_tx,
+                    running,
+                    shutdown,
+                )
+                .await
             });
         }
 
@@ -165,14 +231,17 @@ impl ReceiverPipeline {
             let metrics_tx = metrics_tx.clone();
             let running = Arc::clone(&running);
             let shutdown = Arc::clone(&shutdown);
-            let render_settings = config.render.clone();
+            let render_settings = render_settings.clone();
+            let control_tx = control_tx.clone();
             join_set.spawn(async move {
+                let control_rx = control_tx.subscribe();
                 run_decode_loop(
                     decode_rx,
                     render_stage,
                     render_settings,
                     counters,
                     metrics_tx,
+                    control_rx,
                     running,
                     shutdown,
                     expected_bytes,
@@ -188,13 +257,15 @@ impl ReceiverPipeline {
             let metrics_tx = metrics_tx.clone();
             let running = Arc::clone(&running);
             let shutdown = Arc::clone(&shutdown);
-            let frame_limit = config.pipeline.frame_limit;
+            let control_tx = control_tx.clone();
             join_set.spawn(async move {
+                let control_rx = control_tx.subscribe();
                 run_present_loop(
                     render_stage,
                     render_tx,
                     counters,
                     metrics_tx,
+                    control_rx,
                     running,
                     shutdown,
                     frame_limit,
@@ -220,8 +291,12 @@ impl ReceiverPipeline {
         let ui_shutdown = Arc::clone(&shutdown);
         let ui_counters = Arc::clone(&counters);
         let ui_metrics_tx = metrics_tx.clone();
-        let ui_settings = config.render.clone();
-        let ui_frame_limit = config.pipeline.frame_limit;
+        let ui_settings = ui_render_settings;
+        let ui_frame_limit = frame_limit;
+        let ui_control_tx = control_tx.clone();
+        let ui_status_rx = status_rx;
+        let ui_sender_presets = sender_presets;
+        let ui_buffering_presets = buffering_presets;
         let render_handle = tokio::task::spawn_blocking(move || {
             run_renderer(
                 render_rx,
@@ -231,10 +306,16 @@ impl ReceiverPipeline {
                 ui_shutdown,
                 ui_settings,
                 ui_frame_limit,
+                ui_control_tx,
+                ui_status_rx,
+                ui_sender_presets,
+                ui_buffering_presets,
             )
         });
 
         drop(metrics_tx);
+        drop(control_tx);
+        drop(status_tx);
 
         let mut error: Option<AppError> = None;
 
@@ -336,6 +417,24 @@ impl RenderStage {
             }
         }
     }
+
+    async fn set_buffering(&self, max_frames: usize, max_latency: Duration) -> usize {
+        let mut queue = self.queue.lock().await;
+        let dropped = queue.set_buffering(max_frames, max_latency);
+        if dropped > 0 {
+            self.notify.notify_waiters();
+        }
+        dropped
+    }
+
+    async fn clear(&self) -> usize {
+        let mut queue = self.queue.lock().await;
+        let dropped = queue.clear();
+        if dropped > 0 {
+            self.notify.notify_waiters();
+        }
+        dropped
+    }
 }
 
 #[derive(Debug)]
@@ -419,6 +518,33 @@ impl RenderQueue {
         }
         dropped
     }
+
+    fn set_buffering(&mut self, max_frames: usize, max_latency: Duration) -> usize {
+        self.max_frames = max_frames.max(1);
+        self.max_latency = max_latency;
+        let stale = self.trim_stale(SystemTime::now());
+        let overflow = self.trim_excess();
+        stale + overflow
+    }
+
+    fn clear(&mut self) -> usize {
+        let dropped = self.frames.len();
+        if dropped > 0 {
+            self.frames.clear();
+            self.dropped_total = self.dropped_total.saturating_add(dropped as u64);
+        }
+        dropped
+    }
+
+    fn trim_excess(&mut self) -> usize {
+        let mut dropped = 0usize;
+        while self.frames.len() > self.max_frames {
+            self.frames.pop_front();
+            self.dropped_total = self.dropped_total.saturating_add(1);
+            dropped += 1;
+        }
+        dropped
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -452,28 +578,65 @@ struct QueuePopOutcome {
     dropped_total: u64,
 }
 
-#[instrument(skip(receiver, decode_tx, counters, metrics_tx))]
+#[instrument(skip(decode_tx, counters, metrics_tx, control_rx, status_tx))]
 async fn run_network_loop(
-    receiver: NetworkReceiver,
+    mut endpoint: EndpointConfig,
     mut decode_tx: mpsc::Sender<ReceivedFrame>,
     counters: Arc<PipelineCounters>,
     metrics_tx: mpsc::UnboundedSender<MetricEvent>,
+    mut control_rx: broadcast::Receiver<ControlEvent>,
+    status_tx: mpsc::UnboundedSender<PipelineStatus>,
     running: Arc<AtomicBool>,
     shutdown: Arc<Notify>,
 ) -> AppResult<()> {
+    let mut receiver = NetworkReceiver::new(endpoint.clone());
+    let mut current_address = endpoint.address.clone();
+    let mut connected = false;
+    let _ = status_tx.send(PipelineStatus::Connecting {
+        address: current_address.clone(),
+    });
+
     while running.load(Ordering::Relaxed) {
         tokio::select! {
             _ = shutdown.notified() => break,
+            control = control_rx.recv() => {
+                match control {
+                    Ok(ControlEvent::SelectSender { address }) => {
+                        if address != current_address {
+                            debug!(%current_address, %address, "switching receiver to new sender");
+                        }
+                        current_address = address.clone();
+                        endpoint.address = address.clone();
+                        receiver = NetworkReceiver::new(endpoint.clone());
+                        connected = false;
+                        let _ = status_tx.send(PipelineStatus::Connecting { address });
+                    }
+                    Ok(ControlEvent::SetBuffering { .. }) => {}
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
             result = receiver.receive() => {
                 match result {
                     Ok(frame) => {
+                        if !connected {
+                            connected = true;
+                            let _ = status_tx.send(PipelineStatus::Connected {
+                                address: current_address.clone(),
+                            });
+                        }
                         counters.record_received();
                         if decode_tx.send(frame).await.is_err() {
                             break;
                         }
                     }
                     Err(err) => {
+                        connected = false;
                         warn!(error = %err, "network receive failed; backing off");
+                        let _ = status_tx.send(PipelineStatus::ConnectionFailed {
+                            address: current_address.clone(),
+                            error: err.to_string(),
+                        });
                         let _ = metrics_tx.send(MetricEvent::FrameDropped { count: 1 });
                         counters.record_dropped();
                         tokio::time::sleep(NETWORK_BACKOFF).await;
@@ -482,25 +645,51 @@ async fn run_network_loop(
             }
         }
     }
+
+    let _ = status_tx.send(PipelineStatus::Disconnected);
     Ok(())
 }
 
-#[instrument(skip(render_stage, counters, metrics_tx))]
+#[instrument(skip(render_stage, counters, metrics_tx, control_rx))]
 async fn run_decode_loop(
     mut decode_rx: mpsc::Receiver<ReceivedFrame>,
     render_stage: Arc<RenderStage>,
     render_settings: RenderSettings,
     counters: Arc<PipelineCounters>,
     metrics_tx: mpsc::UnboundedSender<MetricEvent>,
+    mut control_rx: broadcast::Receiver<ControlEvent>,
     running: Arc<AtomicBool>,
     shutdown: Arc<Notify>,
     expected_bytes: usize,
 ) -> AppResult<()> {
-    let decoder = Decoder::new()?;
+    let mut decoder = Decoder::new()?;
 
     while running.load(Ordering::Relaxed) {
         tokio::select! {
             _ = shutdown.notified() => break,
+            control = control_rx.recv() => {
+                match control {
+                    Ok(ControlEvent::SelectSender { .. }) => {
+                        match Decoder::new() {
+                            Ok(new_decoder) => {
+                                decoder = new_decoder;
+                            }
+                            Err(err) => warn!(error = %err, "failed to reset decoder after sender switch"),
+                        }
+                        let mut drained = 0u64;
+                        while let Ok(_) = decode_rx.try_recv() {
+                            drained = drained.saturating_add(1);
+                        }
+                        if drained > 0 {
+                            counters.record_dropped_many(drained);
+                            let _ = metrics_tx.send(MetricEvent::FrameDropped { count: drained });
+                        }
+                    }
+                    Ok(ControlEvent::SetBuffering { .. }) => {}
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
             maybe_frame = decode_rx.recv() => {
                 let Some(frame) = maybe_frame else { break; };
                 match decode_frame(&decoder, frame, &render_settings, expected_bytes) {
@@ -533,51 +722,78 @@ async fn run_decode_loop(
     Ok(())
 }
 
-#[instrument(skip(render_stage, render_tx, counters, metrics_tx))]
+#[instrument(skip(render_stage, render_tx, counters, metrics_tx, control_rx))]
 async fn run_present_loop(
     render_stage: Arc<RenderStage>,
     render_tx: mpsc::UnboundedSender<RenderFrame>,
     counters: Arc<PipelineCounters>,
     metrics_tx: mpsc::UnboundedSender<MetricEvent>,
+    mut control_rx: broadcast::Receiver<ControlEvent>,
     running: Arc<AtomicBool>,
     shutdown: Arc<Notify>,
     frame_limit: Option<u64>,
 ) -> AppResult<()> {
     while running.load(Ordering::Relaxed) {
-        let Some(outcome) = render_stage.pop(&running, &shutdown).await else { break };
+        tokio::select! {
+            control = control_rx.recv() => {
+                match control {
+                    Ok(ControlEvent::SelectSender { .. }) => {
+                        let cleared = render_stage.clear().await;
+                        if cleared > 0 {
+                            counters.record_dropped_many(cleared as u64);
+                            let _ = metrics_tx.send(MetricEvent::FrameDropped { count: cleared as u64 });
+                        }
+                    }
+                    Ok(ControlEvent::SetBuffering { max_frames, max_latency_ms }) => {
+                        let dropped = render_stage
+                            .set_buffering(max_frames, Duration::from_millis(max_latency_ms.max(1)))
+                            .await;
+                        if dropped > 0 {
+                            counters.record_dropped_many(dropped as u64);
+                            let _ = metrics_tx.send(MetricEvent::FrameDropped { count: dropped as u64 });
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            outcome = render_stage.pop(&running, &shutdown) => {
+                let Some(outcome) = outcome else { break };
 
-        if outcome.stale_dropped > 0 {
-            counters.record_dropped_many(outcome.stale_dropped as u64);
-            let _ = metrics_tx.send(MetricEvent::FrameDropped { count: outcome.stale_dropped as u64 });
-        }
+                if outcome.stale_dropped > 0 {
+                    counters.record_dropped_many(outcome.stale_dropped as u64);
+                    let _ = metrics_tx.send(MetricEvent::FrameDropped { count: outcome.stale_dropped as u64 });
+                }
 
-        let frame = outcome.frame;
-        let render_frame = RenderFrame {
-            pixels: frame.pixels,
-            width: frame.width,
-            height: frame.height,
-            timestamp: frame.timestamp,
-            arrival: frame.arrival,
-            frame_id: frame.frame_id,
-            session_id: frame.session_id,
-            decode_latency: frame.decode_latency,
-            queue_latency: outcome.queue_latency,
-            queue_depth: outcome.remaining,
-            dropped_total: outcome.dropped_total,
-        };
+                let frame = outcome.frame;
+                let render_frame = RenderFrame {
+                    pixels: frame.pixels,
+                    width: frame.width,
+                    height: frame.height,
+                    timestamp: frame.timestamp,
+                    arrival: frame.arrival,
+                    frame_id: frame.frame_id,
+                    session_id: frame.session_id,
+                    decode_latency: frame.decode_latency,
+                    queue_latency: outcome.queue_latency,
+                    queue_depth: outcome.remaining,
+                    dropped_total: outcome.dropped_total,
+                };
 
-        if render_tx.send(render_frame).is_err() {
-            running.store(false, Ordering::SeqCst);
-            shutdown.notify_waiters();
-            break;
-        }
-        counters.record_dispatched();
+                if render_tx.send(render_frame).is_err() {
+                    running.store(false, Ordering::SeqCst);
+                    shutdown.notify_waiters();
+                    break;
+                }
+                counters.record_dispatched();
 
-        if let Some(limit) = frame_limit {
-            if counters.frames_dispatched() >= limit {
-                running.store(false, Ordering::SeqCst);
-                shutdown.notify_waiters();
-                break;
+                if let Some(limit) = frame_limit {
+                    if counters.frames_dispatched() >= limit {
+                        running.store(false, Ordering::SeqCst);
+                        shutdown.notify_waiters();
+                        break;
+                    }
+                }
             }
         }
     }

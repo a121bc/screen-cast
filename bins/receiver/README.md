@@ -35,4 +35,15 @@ Each `MetricsSnapshot` captures:
 - Frames-per-second and decode throughput.
 - Average / max end-to-end latency (sender timestamp ➜ presentation) and queue residency.
 
-The UI overlays the latest latency, queue depth, and drop counters alongside the active frame. Closing the window or hitting an optional `--frame-limit` cleanly tears down the async tasks.
+## Graphical interface
+
+Launching the receiver with the default configuration opens an `egui` window that embeds the decoded video surface alongside interactive controls:
+
+- A connection indicator summarises the current state (connecting / connected / failed) and the active sender address.
+- A sender selector lists every configured endpoint; choosing a target and pressing **Connect** immediately rebinds the network stage. Connection errors surface in-line without tearing down the UI.
+- Buffering presets toggle between low-latency and smoother playback strategies. Switching presets updates the render queue limits on the fly and drops any frames that violate the new policy.
+- A metrics side panel exposes real-time gauges for FPS and latency plus historical charts driven by the pipeline metrics stream. These plots make it easy to spot jitter or decode spikes while tuning buffering.
+
+Populate the sender selector via the `network.sender_presets` list in the configuration file; the address supplied on the CLI (or in `network.address`) is added automatically when no presets are provided.
+
+Closing the window or hitting an optional `--frame-limit` cleanly tears down the async tasks.
