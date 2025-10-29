@@ -60,3 +60,51 @@ The current code establishes the workspace skeleton, shared error handling, logg
 4. Building interactive user interfaces for the sender/receiver binaries.
 
 With the workspace in place, contributors can iterate on each component in isolation while maintaining a cohesive sense of the end-to-end architecture.
+
+## Sender pipeline
+
+The `sender` binary now assembles an end-to-end pipeline that captures frames, optionally scales them, encodes the output, and pushes the payload over UDP transport. The pipeline is composed of dedicated tasks for capture, processing, and metrics aggregation, and exposes both CLI and configuration file based controls.
+
+### Running the sender
+
+On a Windows host with the required DXGI support, run:
+
+```bash
+cargo run -p sender -- \
+    --address 192.168.0.42:5000 \
+    --scale 1280x720 \
+    --bitrate-preset high
+```
+
+Key CLI options:
+
+- `--config <PATH>` – load a JSON configuration file.
+- `--monitor ADAPTER:OUTPUT` – choose the DXGI output to duplicate.
+- `--scale WIDTHxHEIGHT` / `--disable-scaling` – override or disable frame scaling.
+- `--bitrate-preset {low|medium|high|custom}` and `--bitrate <BPS>` – control encoder bitrate.
+- `--address HOST:PORT` – override the UDP target.
+- `--use-mocks` / `--mock-frames <COUNT>` – drive the pipeline with mock capture frames (useful for testing).
+
+### Configuration file
+
+Configuration can also be provided via JSON. An example `sender.json`:
+
+```json
+{
+  "capture": { "adapter_index": 0, "output_index": 0, "frame_rate": 60 },
+  "scaling": { "width": 1280, "height": 720, "method": "software" },
+  "encoder": { "preset": "medium" },
+  "network": { "address": "127.0.0.1:5000" },
+  "pipeline": { "channel_capacity": 6, "max_retries": 5, "retry_backoff_ms": 1000 }
+}
+```
+
+Launch with `cargo run -p sender -- --config sender.json` and any CLI flags will override the file.
+
+### Metrics and observability
+
+The pipeline logs frames-per-second along with average and worst-case encode time at the interval configured through `metrics.log_interval_secs` (defaults to 5 seconds). Aggregate counters covering transmitted frames, capture errors, and dropped frames are emitted when the pipeline shuts down.
+
+### Testing with mocks
+
+A mock capture harness is available via `cargo test -p sender`. The integration test toggles the `--use-mocks` pathway to validate that frames flow through capture, scaling, encoding, and transport stages without touching real hardware.
