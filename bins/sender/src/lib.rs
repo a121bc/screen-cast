@@ -6,8 +6,10 @@ pub mod config;
 pub mod metrics;
 #[cfg(target_os = "windows")]
 pub mod pipeline;
+#[cfg(target_os = "windows")]
+pub mod ui;
 
 #[cfg(target_os = "windows")]
 pub use config::{BitratePreset, CaptureSettings, CliArgs, EncoderSettings, MetricsSettings, NetworkSettings, PipelineSettings, ScalingMethod, ScalingSettings, SenderConfig};
 #[cfg(target_os = "windows")]
-pub use pipeline::{PipelineReport, SenderPipeline};
+pub use pipeline::{PipelineCallbacks, PipelineEvent, PipelineReport, SenderPipeline};

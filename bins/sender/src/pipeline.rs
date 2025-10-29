@@ -12,7 +12,7 @@ use tokio::time;
 use tracing::{info, warn};
 
 use crate::config::{MetricsSettings, PipelineSettings, ScalingMethod, ScalingSettings, SenderConfig, DEFAULT_FRAME_RATE, DEFAULT_MOCK_FRAME_COUNT};
-use crate::metrics::{MetricEvent, MetricsCollector};
+use crate::metrics::{MetricEvent, MetricsCollector, MetricsSnapshot};
 
 const DEFAULT_MOCK_WIDTH: u32 = 1920;
 const DEFAULT_MOCK_HEIGHT: u32 = 1080;
@@ -62,6 +62,34 @@ pub struct PipelineReport {
     pub dropped_frames: u64,
 }
 
+#[derive(Debug, Clone)]
+pub enum PipelineEvent {
+    Started,
+    CaptureWarning { message: String },
+    Error { message: String },
+    Stopped(PipelineReport),
+}
+
+#[derive(Clone, Default)]
+pub struct PipelineCallbacks {
+    pub metrics_sender: Option<mpsc::UnboundedSender<MetricsSnapshot>>,
+    pub status_sender: Option<mpsc::UnboundedSender<PipelineEvent>>,
+}
+
+impl PipelineCallbacks {
+    fn emit_metrics(&self, snapshot: &MetricsSnapshot) {
+        if let Some(sender) = self.metrics_sender.as_ref() {
+            let _ = sender.send(snapshot.clone());
+        }
+    }
+
+    fn emit_status(&self, event: PipelineEvent) {
+        if let Some(sender) = self.status_sender.as_ref() {
+            let _ = sender.send(event);
+        }
+    }
+}
+
 type FrameResult = AppResult<CapturedFrame>;
 type FrameSender = mpsc::Sender<FrameResult>;
 type FrameReceiver = mpsc::Receiver<FrameResult>;
@@ -87,6 +115,10 @@ impl SenderPipeline {
     }
 
     pub async fn run(self) -> AppResult<PipelineReport> {
+        self.run_with_callbacks(PipelineCallbacks::default()).await
+    }
+
+    pub async fn run_with_callbacks(self, callbacks: PipelineCallbacks) -> AppResult<PipelineReport> {
         let mut config = self.config;
         config.validate()?;
 
@@ -97,6 +129,8 @@ impl SenderPipeline {
         let pipeline_settings = config.pipeline.clone();
         let metrics_settings = config.metrics.clone();
         let capture_settings = config.capture.clone();
+
+        callbacks.emit_status(PipelineEvent::Started);
 
         let counters = Arc::new(PipelineCounters::default());
 
@@ -143,12 +177,21 @@ impl SenderPipeline {
 
         let capture_counters = Arc::clone(&counters);
         let capture_metrics_tx = metrics_tx.clone();
+        let capture_status_tx = callbacks.status_sender.clone();
         join_set.spawn(async move {
-            run_capture_loop(capture_mode, frame_tx, capture_metrics_tx, capture_counters).await
+            run_capture_loop(
+                capture_mode,
+                frame_tx,
+                capture_metrics_tx,
+                capture_counters,
+                capture_status_tx,
+            )
+            .await
         });
 
         let processor_counters = Arc::clone(&counters);
         let processor_metrics_tx = metrics_tx.clone();
+        let processor_status_tx = callbacks.status_sender.clone();
         join_set.spawn(async move {
             process_frames(
                 frame_rx,
@@ -157,12 +200,24 @@ impl SenderPipeline {
                 network_settings,
                 processor_metrics_tx,
                 processor_counters,
+                processor_status_tx,
             )
             .await
         });
 
         let metrics_counters = Arc::clone(&counters);
-        join_set.spawn(async move { observe_metrics(metrics_rx, metrics_settings, metrics_counters).await });
+        let metrics_status_tx = callbacks.status_sender.clone();
+        let metrics_update_tx = callbacks.metrics_sender.clone();
+        join_set.spawn(async move {
+            observe_metrics(
+                metrics_rx,
+                metrics_settings,
+                metrics_counters,
+                metrics_update_tx,
+                metrics_status_tx,
+            )
+            .await
+        });
 
         drop(metrics_tx);
 
@@ -172,11 +227,18 @@ impl SenderPipeline {
             match result {
                 Ok(Ok(())) => {}
                 Ok(Err(err)) => {
+                    callbacks.emit_status(PipelineEvent::Error {
+                        message: err.to_string(),
+                    });
                     error = Some(err);
                     break;
                 }
                 Err(err) => {
-                    error = Some(join_error(err));
+                    let join_err = join_error(err);
+                    callbacks.emit_status(PipelineEvent::Error {
+                        message: join_err.to_string(),
+                    });
+                    error = Some(join_err);
                     break;
                 }
             }
@@ -198,11 +260,14 @@ impl SenderPipeline {
             result.map_err(join_error)??;
         }
 
-        Ok(PipelineReport {
+        let report = PipelineReport {
             frames_transmitted: counters.frames_sent(),
             capture_errors: counters.capture_errors(),
             dropped_frames: counters.dropped_frames(),
-        })
+        };
+        callbacks.emit_status(PipelineEvent::Stopped(report));
+
+        Ok(report)
     }
 }
 
@@ -215,12 +280,23 @@ async fn run_capture_loop(
     frame_tx: FrameSender,
     metrics_tx: MetricsSender,
     counters: Arc<PipelineCounters>,
+    status_tx: Option<mpsc::UnboundedSender<PipelineEvent>>,
 ) -> AppResult<()> {
     match mode {
         CaptureMode::Real {
             capture_config,
             pipeline,
-        } => run_real_capture(capture_config, pipeline, frame_tx, metrics_tx, counters).await,
+        } => {
+            run_real_capture(
+                capture_config,
+                pipeline,
+                frame_tx,
+                metrics_tx,
+                counters,
+                status_tx,
+            )
+            .await
+        }
         CaptureMode::Mock {
             frame_count,
             width,
@@ -236,6 +312,7 @@ async fn run_real_capture(
     mut frame_tx: FrameSender,
     metrics_tx: MetricsSender,
     counters: Arc<PipelineCounters>,
+    status_tx: Option<mpsc::UnboundedSender<PipelineEvent>>,
 ) -> AppResult<()> {
     let mut attempts = 0usize;
     loop {
@@ -246,10 +323,23 @@ async fn run_real_capture(
                     Ok(stream) => stream,
                     Err(err) => {
                         counters.record_capture_error();
+                        let detail = format!("capture stream error: {err}");
                         warn!(error = %err, "failed to create capture stream; retrying");
-                        let _ = metrics_tx.send(MetricEvent::CaptureError).await;
-                        let message = AppError::Message(format!("capture stream error: {err}"));
-                        if frame_tx.send(Err(message)).await.is_err() {
+                        let _ = metrics_tx
+                            .send(MetricEvent::CaptureError {
+                                message: detail.clone(),
+                            })
+                            .await;
+                        if let Some(status) = status_tx.as_ref() {
+                            let _ = status.send(PipelineEvent::CaptureWarning {
+                                message: detail.clone(),
+                            });
+                        }
+                        if frame_tx
+                            .send(Err(AppError::Message(detail.clone())))
+                            .await
+                            .is_err()
+                        {
                             return Ok(());
                         }
                         attempts = attempts.saturating_add(1);
@@ -273,10 +363,23 @@ async fn run_real_capture(
                         }
                         Err(err) => {
                             counters.record_capture_error();
+                            let detail = format!("capture error: {err}");
                             warn!(error = %err, "capture stream produced error; attempting recovery");
-                            let _ = metrics_tx.send(MetricEvent::CaptureError).await;
-                            let message = AppError::Message(format!("capture error: {err}"));
-                            if frame_tx.send(Err(message)).await.is_err() {
+                            let _ = metrics_tx
+                                .send(MetricEvent::CaptureError {
+                                    message: detail.clone(),
+                                })
+                                .await;
+                            if let Some(status) = status_tx.as_ref() {
+                                let _ = status.send(PipelineEvent::CaptureWarning {
+                                    message: detail.clone(),
+                                });
+                            }
+                            if frame_tx
+                                .send(Err(AppError::Message(detail.clone())))
+                                .await
+                                .is_err()
+                            {
                                 return Ok(());
                             }
                             attempts += 1;
@@ -293,8 +396,18 @@ async fn run_real_capture(
             }
             Err(err) => {
                 counters.record_capture_error();
+                let detail = format!("failed to initialise capture: {err}");
                 warn!(error = %err, "failed to initialise capture; retrying");
-                let _ = metrics_tx.send(MetricEvent::CaptureError).await;
+                let _ = metrics_tx
+                    .send(MetricEvent::CaptureError {
+                        message: detail.clone(),
+                    })
+                    .await;
+                if let Some(status) = status_tx.as_ref() {
+                    let _ = status.send(PipelineEvent::CaptureWarning {
+                        message: detail.clone(),
+                    });
+                }
                 attempts += 1;
                 if !should_retry(attempts, pipeline.max_retries) {
                     return Err(AppError::Message(format!(
@@ -343,6 +456,7 @@ async fn process_frames(
     network_settings: crate::config::NetworkSettings,
     metrics_tx: MetricsSender,
     counters: Arc<PipelineCounters>,
+    status_tx: Option<mpsc::UnboundedSender<PipelineEvent>>,
 ) -> AppResult<()> {
     let encoder = codec::Encoder::new(codec_config)?;
     let endpoint = network::EndpointConfig::new(network_settings.address.clone());
@@ -367,8 +481,16 @@ async fn process_frames(
             }
             Err(err) => {
                 counters.record_drop();
+                let detail = format!("processor received capture error: {err}");
                 warn!(error = %err, "processor received capture error frame");
-                let _ = metrics_tx.send(MetricEvent::CaptureError).await;
+                let _ = metrics_tx
+                    .send(MetricEvent::CaptureError {
+                        message: detail.clone(),
+                    })
+                    .await;
+                if let Some(status) = status_tx.as_ref() {
+                    let _ = status.send(PipelineEvent::CaptureWarning { message: detail });
+                }
             }
         }
     }
@@ -380,6 +502,8 @@ async fn observe_metrics(
     mut metrics_rx: MetricsReceiver,
     metrics_settings: MetricsSettings,
     counters: Arc<PipelineCounters>,
+    metrics_update_tx: Option<mpsc::UnboundedSender<MetricsSnapshot>>,
+    status_tx: Option<mpsc::UnboundedSender<PipelineEvent>>,
 ) -> AppResult<()> {
     let mut collector = MetricsCollector::new(metrics_settings.interval());
 
@@ -387,6 +511,9 @@ async fn observe_metrics(
         match event {
             MetricEvent::Frame { encode_latency } => {
                 if let Some(snapshot) = collector.record_frame(encode_latency) {
+                    if let Some(sender) = metrics_update_tx.as_ref() {
+                        let _ = sender.send(snapshot.clone());
+                    }
                     info!(
                         fps = format!("{:.2}", snapshot.fps),
                         avg_encode_ms = format!("{:.2}", snapshot.avg_encode_ms),
@@ -398,8 +525,11 @@ async fn observe_metrics(
                     );
                 }
             }
-            MetricEvent::CaptureError => {
+            MetricEvent::CaptureError { message } => {
                 collector.record_error();
+                if let Some(status) = status_tx.as_ref() {
+                    let _ = status.send(PipelineEvent::CaptureWarning { message });
+                }
             }
         }
     }
