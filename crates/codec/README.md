@@ -8,6 +8,51 @@ The `codec` crate provides encoder and decoder implementations for the Windows C
 
 The `h264` module provides a production-ready H.264 encoder using Windows Media Foundation Transform (MFT). This encoder leverages hardware acceleration when available and provides fine-grained control over encoding parameters.
 
+### H.264 Decoder (Windows Media Foundation)
+
+The `h264` module also provides a Windows Media Foundation H.264 decoder capable of accepting Annex-B NAL unit streams and producing decoded frames suitable for rendering.
+
+Key features:
+
+- NAL unit input (Annex-B with start codes)
+- Timestamp passthrough for latency calculation
+- Reconfiguration handling on resolution changes (SPS updates)
+- Buffering strategy with drop policies (oldest/newest)
+- Output to CPU buffers (NV12 or BGRA). DXGI output is planned and API-stubbed.
+
+Basic usage:
+
+```rust
+use codec::h264::{H264Decoder, H264DecoderConfig, DecoderOutput, DecodeOutput};
+
+let mut decoder = H264Decoder::new(H264DecoderConfig { output: DecoderOutput::CpuNv12, ..Default::default() })?;
+
+// Feed NAL units with timestamps in 100-ns units (Media Foundation timebase)
+let timestamp_100ns: i64 = 0;
+decoder.push_nal(&annexb_bytes, timestamp_100ns)?;
+
+while let Some(out) = decoder.try_get_output()? {
+    match out {
+        DecodeOutput::Frame(frame) => {
+            println!(
+                "decoded {}x{} {:?} frame ({} bytes) @{}", 
+                frame.width, frame.height, frame.pixel_format, frame.data.len(), frame.timestamp
+            );
+        }
+        DecodeOutput::Event(evt) => {
+            println!("decoder event: {:?}", evt);
+        }
+    }
+}
+```
+
+Notes:
+
+- The decoder negotiates output format automatically. Resolution is learned from SPS and may change at runtime; a `Reconfigured` event is emitted and subsequent frames reflect the new format.
+- Timestamp passthrough: Sample timestamps set on input are propagated to output frames by the decoder to support precise end-to-end latency tracking.
+- Buffering: Configure `buffering.max_frames` and `drop_policy` to bound latency during spikes.
+- DXGI texture output requires a D3D11 device manager and is not wired in this initial implementation; CPU frame output is recommended for integration and testing.
+
 #### Key Features
 
 - **Hardware Acceleration**: Automatically uses hardware-accelerated encoding when available
