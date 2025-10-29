@@ -8,20 +8,36 @@ fn main() {
 #[cfg(target_os = "windows")]
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> shared::AppResult<()> {
+    use clap::Parser;
+
     shared::init_tracing()?;
 
-    let decoder = codec::Decoder::new()?;
-    let endpoint_json = "{\"address\":\"127.0.0.1:5000\"}";
-    let endpoint = network::config_from_json(endpoint_json)?;
-    let receiver = network::NetworkReceiver::new(endpoint.clone());
+    let cli = receiver::CliArgs::parse();
+    let config = receiver::ReceiverConfig::from_cli(cli)?;
 
-    let packet = receiver.receive().await?;
-    shared::yield_control().await;
-    let frame = decoder.decode(&packet)?;
+    tracing::info!(
+        address = %config.network.address,
+        bind = ?config.network.bind,
+        width = config.render.width,
+        height = config.render.height,
+        render_queue = config.pipeline.render_queue,
+        max_latency_ms = config.pipeline.max_latency_ms,
+        "starting receiver pipeline"
+    );
 
-    tracing::info!(addr = %endpoint.address, bytes = packet.len(), "placeholder payload received");
-    let accent = shared::ui::accent_colour();
-    tracing::info!(?accent, size = frame.len(), "received frame in placeholder pipeline");
+    let pipeline = receiver::ReceiverPipeline::new(config)?;
+    let report = pipeline.run().await?;
+
+    tracing::info!(
+        frames_received = report.frames_received,
+        frames_decoded = report.frames_decoded,
+        frames_dispatched = report.frames_dispatched,
+        frames_rendered = report.frames_rendered,
+        dropped_frames = report.frames_dropped,
+        avg_latency_ms = format!("{:.2}", report.avg_latency_ms),
+        max_latency_ms = format!("{:.2}", report.max_latency_ms),
+        "receiver pipeline completed"
+    );
 
     Ok(())
 }
