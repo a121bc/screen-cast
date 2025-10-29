@@ -8,10 +8,10 @@ use serde::Deserialize;
 use shared::{AppError, AppResult};
 
 const DEFAULT_ADDRESS: &str = "127.0.0.1:5000";
-const DEFAULT_JITTER_CAPACITY: usize = 32;
+const DEFAULT_JITTER_CAPACITY: usize = 48;
 const DEFAULT_MAX_LATENCY_MS: u64 = 500;
-const DEFAULT_DECODE_QUEUE: usize = 8;
-const DEFAULT_RENDER_QUEUE: usize = 6;
+const DEFAULT_DECODE_QUEUE: usize = 10;
+const DEFAULT_RENDER_QUEUE: usize = 8;
 const DEFAULT_FRAME_WIDTH: u32 = 1920;
 const DEFAULT_FRAME_HEIGHT: u32 = 1080;
 const DEFAULT_REFRESH_RATE: u32 = 60;

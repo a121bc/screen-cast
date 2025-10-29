@@ -6,6 +6,7 @@ members = [
     "crates/network",
     "bins/sender",
     "bins/receiver",
+    "bins/perf_harness",
 ]
 resolver = "2"
 

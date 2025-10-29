@@ -1,0 +1,730 @@
+{
+  "seed": 3032024109,
+  "generated_at_epoch_ms": 1761724233612,
+  "overall_avg_latency_ms": 225.36157991442528,
+  "worst_p95_latency_ms": 457.53307583738535,
+  "overall_drop_rate": 0.019128540305010894,
+  "passes": true,
+  "reports": [
+    {
+      "scenario": "1080p_60fps_6mbps",
+      "stress_level": "elevated",
+      "resolution": "1920x1080",
+      "fps": 60,
+      "bitrate_mbps": 6.0,
+      "duration_secs": 90,
+      "latency_budget_ms": 500.0,
+      "frames_simulated": 5400,
+      "frames_presented": 5331,
+      "frames_dropped": 69,
+      "drop_rate": 0.012777777777777779,
+      "avg_latency_ms": 187.93049970870482,
+      "p95_latency_ms": 257.85995173495,
+      "max_latency_ms": 369.0755542335505,
+      "jitter_ms": 42.02846326342557,
+      "average_fps": 59.233333333333334,
+      "passes_latency": true,
+      "notes": [],
+      "drop_events": [
+        {
+          "frame_index": 89,
+          "reason": "queue_overflow",
+          "latency_ms": 244.70897040383176
+        },
+        {
+          "frame_index": 99,
+          "reason": "packet_loss",
+          "latency_ms": 54.5030859330662
+        },
+        {
+          "frame_index": 210,
+          "reason": "queue_overflow",
+          "latency_ms": 277.0559417989103
+        },
+        {
+          "frame_index": 249,
+          "reason": "queue_overflow",
+          "latency_ms": 247.3062121272842
+        },
+        {
+          "frame_index": 257,
+          "reason": "packet_loss",
+          "latency_ms": 51.92123467440693
+        },
+        {
+          "frame_index": 404,
+          "reason": "packet_loss",
+          "latency_ms": 56.65761321794241
+        },
+        {
+          "frame_index": 409,
+          "reason": "packet_loss",
+          "latency_ms": 55.56929255823897
+        },
+        {
+          "frame_index": 421,
+          "reason": "queue_overflow",
+          "latency_ms": 224.0375438135934
+        },
+        {
+          "frame_index": 489,
+          "reason": "queue_overflow",
+          "latency_ms": 242.6445279897158
+        },
+        {
+          "frame_index": 543,
+          "reason": "queue_overflow",
+          "latency_ms": 175.1580425099776
+        },
+        {
+          "frame_index": 568,
+          "reason": "packet_loss",
+          "latency_ms": 26.737275174516355
+        },
+        {
+          "frame_index": 638,
+          "reason": "queue_overflow",
+          "latency_ms": 141.9421964128769
+        }
+      ]
+    },
+    {
+      "scenario": "1080p_60fps_6mbps",
+      "stress_level": "extreme",
+      "resolution": "1920x1080",
+      "fps": 60,
+      "bitrate_mbps": 6.0,
+      "duration_secs": 90,
+      "latency_budget_ms": 500.0,
+      "frames_simulated": 5400,
+      "frames_presented": 5230,
+      "frames_dropped": 170,
+      "drop_rate": 0.03148148148148148,
+      "avg_latency_ms": 233.21772062296344,
+      "p95_latency_ms": 322.95849710787445,
+      "max_latency_ms": 498.4379234656745,
+      "jitter_ms": 54.83293187191275,
+      "average_fps": 58.111111111111114,
+      "passes_latency": true,
+      "notes": [
+        "Drop rate 3.15% exceeded the 3% advisory threshold"
+      ],
+      "drop_events": [
+        {
+          "frame_index": 23,
+          "reason": "queue_overflow",
+          "latency_ms": 149.73234941966274
+        },
+        {
+          "frame_index": 46,
+          "reason": "queue_overflow",
+          "latency_ms": 232.38036273797206
+        },
+        {
+          "frame_index": 54,
+          "reason": "packet_loss",
+          "latency_ms": 86.16106627822964
+        },
+        {
+          "frame_index": 62,
+          "reason": "queue_overflow",
+          "latency_ms": 265.0275036050849
+        },
+        {
+          "frame_index": 81,
+          "reason": "packet_loss",
+          "latency_ms": 83.489203143979
+        },
+        {
+          "frame_index": 119,
+          "reason": "packet_loss",
+          "latency_ms": 61.028784429618064
+        },
+        {
+          "frame_index": 124,
+          "reason": "packet_loss",
+          "latency_ms": 75.00928028483234
+        },
+        {
+          "frame_index": 125,
+          "reason": "packet_loss",
+          "latency_ms": 49.373037750125754
+        },
+        {
+          "frame_index": 135,
+          "reason": "queue_overflow",
+          "latency_ms": 116.11726383409854
+        },
+        {
+          "frame_index": 156,
+          "reason": "queue_overflow",
+          "latency_ms": 255.16724406190116
+        },
+        {
+          "frame_index": 175,
+          "reason": "queue_overflow",
+          "latency_ms": 357.5595047293011
+        },
+        {
+          "frame_index": 196,
+          "reason": "packet_loss",
+          "latency_ms": 94.68696870580351
+        }
+      ]
+    },
+    {
+      "scenario": "1080p_60fps_6mbps",
+      "stress_level": "nominal",
+      "resolution": "1920x1080",
+      "fps": 60,
+      "bitrate_mbps": 6.0,
+      "duration_secs": 90,
+      "latency_budget_ms": 500.0,
+      "frames_simulated": 5400,
+      "frames_presented": 5393,
+      "frames_dropped": 7,
+      "drop_rate": 0.0012962962962962963,
+      "avg_latency_ms": 143.20950689832242,
+      "p95_latency_ms": 194.25105977328886,
+      "max_latency_ms": 260.2469072237702,
+      "jitter_ms": 31.09791521864479,
+      "average_fps": 59.922222222222224,
+      "passes_latency": true,
+      "notes": [],
+      "drop_events": [
+        {
+          "frame_index": 2342,
+          "reason": "packet_loss",
+          "latency_ms": 43.807824711104196
+        },
+        {
+          "frame_index": 2764,
+          "reason": "packet_loss",
+          "latency_ms": 53.307241021316344
+        },
+        {
+          "frame_index": 3329,
+          "reason": "packet_loss",
+          "latency_ms": 42.9828356068202
+        },
+        {
+          "frame_index": 3361,
+          "reason": "packet_loss",
+          "latency_ms": 54.49392327583117
+        },
+        {
+          "frame_index": 5141,
+          "reason": "packet_loss",
+          "latency_ms": 52.33747683216034
+        },
+        {
+          "frame_index": 5348,
+          "reason": "packet_loss",
+          "latency_ms": 62.15057394378572
+        },
+        {
+          "frame_index": 5368,
+          "reason": "packet_loss",
+          "latency_ms": 53.38174034885225
+        }
+      ]
+    },
+    {
+      "scenario": "1440p_60fps_10mbps",
+      "stress_level": "elevated",
+      "resolution": "2560x1440",
+      "fps": 60,
+      "bitrate_mbps": 10.0,
+      "duration_secs": 90,
+      "latency_budget_ms": 500.0,
+      "frames_simulated": 5400,
+      "frames_presented": 5320,
+      "frames_dropped": 80,
+      "drop_rate": 0.014814814814814815,
+      "avg_latency_ms": 219.34371274937695,
+      "p95_latency_ms": 305.98431432938526,
+      "max_latency_ms": 444.25390175334473,
+      "jitter_ms": 51.94304725909639,
+      "average_fps": 59.111111111111114,
+      "passes_latency": true,
+      "notes": [],
+      "drop_events": [
+        {
+          "frame_index": 103,
+          "reason": "queue_overflow",
+          "latency_ms": 199.00622990918976
+        },
+        {
+          "frame_index": 177,
+          "reason": "packet_loss",
+          "latency_ms": 87.89398123304846
+        },
+        {
+          "frame_index": 279,
+          "reason": "packet_loss",
+          "latency_ms": 84.30070693762495
+        },
+        {
+          "frame_index": 302,
+          "reason": "packet_loss",
+          "latency_ms": 98.72480889971511
+        },
+        {
+          "frame_index": 354,
+          "reason": "queue_overflow",
+          "latency_ms": 206.5302291628206
+        },
+        {
+          "frame_index": 373,
+          "reason": "packet_loss",
+          "latency_ms": 78.8282698174009
+        },
+        {
+          "frame_index": 434,
+          "reason": "queue_overflow",
+          "latency_ms": 182.11165168358608
+        },
+        {
+          "frame_index": 464,
+          "reason": "packet_loss",
+          "latency_ms": 67.51031129171062
+        },
+        {
+          "frame_index": 490,
+          "reason": "queue_overflow",
+          "latency_ms": 262.87086291308333
+        },
+        {
+          "frame_index": 504,
+          "reason": "queue_overflow",
+          "latency_ms": 171.61126834345208
+        },
+        {
+          "frame_index": 628,
+          "reason": "queue_overflow",
+          "latency_ms": 257.7373298762527
+        },
+        {
+          "frame_index": 640,
+          "reason": "packet_loss",
+          "latency_ms": 74.79534477940149
+        }
+      ]
+    },
+    {
+      "scenario": "1440p_60fps_10mbps",
+      "stress_level": "extreme",
+      "resolution": "2560x1440",
+      "fps": 60,
+      "bitrate_mbps": 10.0,
+      "duration_secs": 90,
+      "latency_budget_ms": 500.0,
+      "frames_simulated": 5400,
+      "frames_presented": 5207,
+      "frames_dropped": 193,
+      "drop_rate": 0.03574074074074074,
+      "avg_latency_ms": 276.3172958204179,
+      "p95_latency_ms": 385.6924673335643,
+      "max_latency_ms": 498.1531444645745,
+      "jitter_ms": 65.20677401224265,
+      "average_fps": 57.855555555555554,
+      "passes_latency": true,
+      "notes": [
+        "Drop rate 3.57% exceeded the 3% advisory threshold"
+      ],
+      "drop_events": [
+        {
+          "frame_index": 85,
+          "reason": "queue_overflow",
+          "latency_ms": 396.7686379493448
+        },
+        {
+          "frame_index": 114,
+          "reason": "queue_overflow",
+          "latency_ms": 205.12007931845392
+        },
+        {
+          "frame_index": 150,
+          "reason": "packet_loss",
+          "latency_ms": 92.14180214132294
+        },
+        {
+          "frame_index": 157,
+          "reason": "packet_loss",
+          "latency_ms": 99.93962501554321
+        },
+        {
+          "frame_index": 162,
+          "reason": "packet_loss",
+          "latency_ms": 102.17039064231425
+        },
+        {
+          "frame_index": 232,
+          "reason": "queue_overflow",
+          "latency_ms": 369.30607141340954
+        },
+        {
+          "frame_index": 244,
+          "reason": "queue_overflow",
+          "latency_ms": 301.89643367713546
+        },
+        {
+          "frame_index": 248,
+          "reason": "queue_overflow",
+          "latency_ms": 256.1357463283469
+        },
+        {
+          "frame_index": 268,
+          "reason": "packet_loss",
+          "latency_ms": 118.40764356803311
+        },
+        {
+          "frame_index": 283,
+          "reason": "packet_loss",
+          "latency_ms": 66.90853503882286
+        },
+        {
+          "frame_index": 353,
+          "reason": "packet_loss",
+          "latency_ms": 54.3764048893869
+        },
+        {
+          "frame_index": 356,
+          "reason": "packet_loss",
+          "latency_ms": 119.05060905798521
+        }
+      ]
+    },
+    {
+      "scenario": "1440p_60fps_10mbps",
+      "stress_level": "nominal",
+      "resolution": "2560x1440",
+      "fps": 60,
+      "bitrate_mbps": 10.0,
+      "duration_secs": 90,
+      "latency_budget_ms": 500.0,
+      "frames_simulated": 5400,
+      "frames_presented": 5382,
+      "frames_dropped": 18,
+      "drop_rate": 0.0033333333333333335,
+      "avg_latency_ms": 169.68350579654603,
+      "p95_latency_ms": 233.48496365519742,
+      "max_latency_ms": 338.00813581185974,
+      "jitter_ms": 38.971365214213165,
+      "average_fps": 59.8,
+      "passes_latency": true,
+      "notes": [],
+      "drop_events": [
+        {
+          "frame_index": 130,
+          "reason": "queue_overflow",
+          "latency_ms": 201.7953152191361
+        },
+        {
+          "frame_index": 1155,
+          "reason": "queue_overflow",
+          "latency_ms": 112.2895014876096
+        },
+        {
+          "frame_index": 1719,
+          "reason": "packet_loss",
+          "latency_ms": 57.55039643111655
+        },
+        {
+          "frame_index": 1733,
+          "reason": "queue_overflow",
+          "latency_ms": 119.70459266058157
+        },
+        {
+          "frame_index": 1948,
+          "reason": "packet_loss",
+          "latency_ms": 62.84118939611008
+        },
+        {
+          "frame_index": 2494,
+          "reason": "packet_loss",
+          "latency_ms": 58.505576996427635
+        },
+        {
+          "frame_index": 2651,
+          "reason": "packet_loss",
+          "latency_ms": 58.06354154320904
+        },
+        {
+          "frame_index": 2837,
+          "reason": "queue_overflow",
+          "latency_ms": 167.33603663562465
+        },
+        {
+          "frame_index": 2872,
+          "reason": "queue_overflow",
+          "latency_ms": 95.00031872706673
+        },
+        {
+          "frame_index": 3217,
+          "reason": "packet_loss",
+          "latency_ms": 64.19858441522858
+        },
+        {
+          "frame_index": 3233,
+          "reason": "queue_overflow",
+          "latency_ms": 138.1821306260893
+        },
+        {
+          "frame_index": 3469,
+          "reason": "queue_overflow",
+          "latency_ms": 177.20597699556046
+        }
+      ]
+    },
+    {
+      "scenario": "2160p_60fps_18mbps",
+      "stress_level": "elevated",
+      "resolution": "3840x2160",
+      "fps": 60,
+      "bitrate_mbps": 18.0,
+      "duration_secs": 75,
+      "latency_budget_ms": 500.0,
+      "frames_simulated": 4500,
+      "frames_presented": 4409,
+      "frames_dropped": 91,
+      "drop_rate": 0.02022222222222222,
+      "avg_latency_ms": 279.7279793099191,
+      "p95_latency_ms": 398.01742001407706,
+      "max_latency_ms": 497.8264294376132,
+      "jitter_ms": 70.15347183225951,
+      "average_fps": 58.78666666666667,
+      "passes_latency": true,
+      "notes": [],
+      "drop_events": [
+        {
+          "frame_index": 40,
+          "reason": "queue_overflow",
+          "latency_ms": 227.41593676486931
+        },
+        {
+          "frame_index": 44,
+          "reason": "latency_budget",
+          "latency_ms": 531.2534128720946
+        },
+        {
+          "frame_index": 94,
+          "reason": "packet_loss",
+          "latency_ms": 74.59359784678246
+        },
+        {
+          "frame_index": 109,
+          "reason": "packet_loss",
+          "latency_ms": 113.0725296413849
+        },
+        {
+          "frame_index": 129,
+          "reason": "latency_budget",
+          "latency_ms": 543.2249053862341
+        },
+        {
+          "frame_index": 188,
+          "reason": "packet_loss",
+          "latency_ms": 110.9422344168332
+        },
+        {
+          "frame_index": 237,
+          "reason": "queue_overflow",
+          "latency_ms": 368.1922062184992
+        },
+        {
+          "frame_index": 307,
+          "reason": "packet_loss",
+          "latency_ms": 138.45600101696792
+        },
+        {
+          "frame_index": 389,
+          "reason": "packet_loss",
+          "latency_ms": 116.88364779263404
+        },
+        {
+          "frame_index": 443,
+          "reason": "queue_overflow",
+          "latency_ms": 266.2739598411493
+        },
+        {
+          "frame_index": 471,
+          "reason": "queue_overflow",
+          "latency_ms": 257.14762437206724
+        },
+        {
+          "frame_index": 534,
+          "reason": "queue_overflow",
+          "latency_ms": 133.06150098332705
+        }
+      ]
+    },
+    {
+      "scenario": "2160p_60fps_18mbps",
+      "stress_level": "extreme",
+      "resolution": "3840x2160",
+      "fps": 60,
+      "bitrate_mbps": 18.0,
+      "duration_secs": 75,
+      "latency_budget_ms": 500.0,
+      "frames_simulated": 4500,
+      "frames_presented": 4281,
+      "frames_dropped": 219,
+      "drop_rate": 0.048666666666666664,
+      "avg_latency_ms": 327.11509805055437,
+      "p95_latency_ms": 457.53307583738535,
+      "max_latency_ms": 499.6778509453581,
+      "jitter_ms": 79.51747356993444,
+      "average_fps": 57.08,
+      "passes_latency": true,
+      "notes": [
+        "Drop rate 4.87% exceeded the 3% advisory threshold",
+        "P95 latency 457.53 ms is within 10% of the budget (500 ms)"
+      ],
+      "drop_events": [
+        {
+          "frame_index": 11,
+          "reason": "queue_overflow",
+          "latency_ms": 242.86316255748375
+        },
+        {
+          "frame_index": 39,
+          "reason": "queue_overflow",
+          "latency_ms": 331.01789304832107
+        },
+        {
+          "frame_index": 52,
+          "reason": "latency_budget",
+          "latency_ms": 511.05174149752924
+        },
+        {
+          "frame_index": 55,
+          "reason": "queue_overflow",
+          "latency_ms": 238.58165601950458
+        },
+        {
+          "frame_index": 127,
+          "reason": "latency_budget",
+          "latency_ms": 509.28063023717857
+        },
+        {
+          "frame_index": 171,
+          "reason": "packet_loss",
+          "latency_ms": 71.0064463640357
+        },
+        {
+          "frame_index": 188,
+          "reason": "packet_loss",
+          "latency_ms": 172.70616008529942
+        },
+        {
+          "frame_index": 224,
+          "reason": "latency_budget",
+          "latency_ms": 503.7635002181042
+        },
+        {
+          "frame_index": 255,
+          "reason": "latency_budget",
+          "latency_ms": 551.5186560711245
+        },
+        {
+          "frame_index": 300,
+          "reason": "queue_overflow",
+          "latency_ms": 331.6796775773723
+        },
+        {
+          "frame_index": 301,
+          "reason": "queue_overflow",
+          "latency_ms": 419.3738790092392
+        },
+        {
+          "frame_index": 326,
+          "reason": "packet_loss",
+          "latency_ms": 148.28516249067522
+        }
+      ]
+    },
+    {
+      "scenario": "2160p_60fps_18mbps",
+      "stress_level": "nominal",
+      "resolution": "3840x2160",
+      "fps": 60,
+      "bitrate_mbps": 18.0,
+      "duration_secs": 75,
+      "latency_budget_ms": 500.0,
+      "frames_simulated": 4500,
+      "frames_presented": 4469,
+      "frames_dropped": 31,
+      "drop_rate": 0.006888888888888889,
+      "avg_latency_ms": 223.69305717317692,
+      "p95_latency_ms": 311.373587874741,
+      "max_latency_ms": 451.00034597003435,
+      "jitter_ms": 53.756389797090854,
+      "average_fps": 59.586666666666666,
+      "passes_latency": true,
+      "notes": [],
+      "drop_events": [
+        {
+          "frame_index": 132,
+          "reason": "packet_loss",
+          "latency_ms": 83.44189924757472
+        },
+        {
+          "frame_index": 318,
+          "reason": "queue_overflow",
+          "latency_ms": 272.4783039793919
+        },
+        {
+          "frame_index": 591,
+          "reason": "packet_loss",
+          "latency_ms": 83.50197094247153
+        },
+        {
+          "frame_index": 645,
+          "reason": "packet_loss",
+          "latency_ms": 90.33356203819676
+        },
+        {
+          "frame_index": 720,
+          "reason": "queue_overflow",
+          "latency_ms": 256.65772066756716
+        },
+        {
+          "frame_index": 737,
+          "reason": "packet_loss",
+          "latency_ms": 100.90180247520811
+        },
+        {
+          "frame_index": 998,
+          "reason": "packet_loss",
+          "latency_ms": 82.22200933118606
+        },
+        {
+          "frame_index": 1157,
+          "reason": "packet_loss",
+          "latency_ms": 81.88440336230512
+        },
+        {
+          "frame_index": 1181,
+          "reason": "packet_loss",
+          "latency_ms": 106.69824465491422
+        },
+        {
+          "frame_index": 1362,
+          "reason": "packet_loss",
+          "latency_ms": 65.84569837827246
+        },
+        {
+          "frame_index": 1524,
+          "reason": "packet_loss",
+          "latency_ms": 79.92001426478454
+        },
+        {
+          "frame_index": 1531,
+          "reason": "queue_overflow",
+          "latency_ms": 302.6850185854484
+        }
+      ]
+    }
+  ]
+}
