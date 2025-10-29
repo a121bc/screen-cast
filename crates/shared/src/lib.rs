@@ -1,8 +1,5 @@
 #![cfg_attr(not(target_os = "windows"), allow(dead_code))]
 
-#[cfg(not(target_os = "windows"))]
-compile_error!("The shared crate currently only supports Windows targets.");
-
 mod error;
 
 use std::sync::OnceLock;
