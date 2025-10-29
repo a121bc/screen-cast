@@ -23,7 +23,7 @@ serde_json = "1.0"
 tokio = { version = "1.37", features = ["macros", "rt-multi-thread", "sync", "time", "net"], optional = true }
 tokio-stream = { version = "0.1", features = ["sync"], optional = true }
 egui = { version = "0.26", optional = true }
-eframe = { version = "0.26", optional = true, default-features = false, features = ["wgpu", "default_fonts"] }
+eframe = { version = "0.26", optional = true, default-features = false, features = ["wgpu", "default_fonts", "egui_plot"] }
 windows = { version = "0.54", default-features = false, optional = true, features = [
     "Win32_Foundation",
     "Win32_Security",

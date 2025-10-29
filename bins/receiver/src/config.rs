@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -199,6 +200,10 @@ impl ReceiverConfig {
         self.metrics.channel_capacity
     }
 
+    pub fn sender_presets(&self) -> &[String] {
+        &self.network.sender_presets
+    }
+
     fn from_file(path: &Path) -> AppResult<Self> {
         let contents = fs::read_to_string(path)
             .map_err(|err| AppError::Message(format!("failed to read config {path:?}: {err}")))?;
@@ -239,6 +244,8 @@ impl ReceiverConfig {
             self.metrics.channel_capacity = DEFAULT_METRICS_CHANNEL_CAPACITY;
         }
 
+        self.network.normalise_presets();
+
         Ok(())
     }
 }
@@ -257,6 +264,8 @@ pub struct NetworkSettings {
     pub max_packet_payload: Option<usize>,
     #[serde(default)]
     pub handshake_timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub sender_presets: Vec<String>,
 }
 
 impl Default for NetworkSettings {
@@ -268,6 +277,7 @@ impl Default for NetworkSettings {
             target_bitrate: None,
             max_packet_payload: None,
             handshake_timeout_ms: None,
+            sender_presets: Vec::new(),
         }
     }
 }
@@ -282,6 +292,30 @@ impl NetworkSettings {
             return Err(AppError::Message("jitter buffer capacity must be greater than zero".into()));
         }
         Ok(())
+    }
+
+    fn normalise_presets(&mut self) {
+        let mut presets = Vec::new();
+        for preset in std::mem::take(&mut self.sender_presets) {
+            let trimmed = preset.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if !presets.iter().any(|existing: &String| existing == trimmed) {
+                presets.push(trimmed.to_string());
+            }
+        }
+        if !presets.iter().any(|existing| existing == &self.address) {
+            presets.push(self.address.clone());
+        }
+        presets.sort();
+        presets.dedup();
+        presets.sort_by(|a, b| match (a == &self.address, b == &self.address) {
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+            _ => a.cmp(b),
+        });
+        self.sender_presets = presets;
     }
 }
 
