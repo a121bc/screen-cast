@@ -3,13 +3,17 @@ name = "receiver"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["gui"]
+gui = ["dep:eframe", "shared/ui"]
+
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 codec = { path = "../../crates/codec" }
-eframe = { workspace = true }
+eframe = { workspace = true, optional = true }
 network = { path = "../../crates/network" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-shared = { path = "../../crates/shared", default-features = false, features = ["win32", "runtime", "ui"] }
+shared = { path = "../../crates/shared", default-features = false, features = ["win32", "runtime"] }
 tokio = { workspace = true }
 tracing = { workspace = true }

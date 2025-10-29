@@ -6,7 +6,7 @@ pub mod config;
 pub mod metrics;
 #[cfg(target_os = "windows")]
 pub mod pipeline;
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", feature = "gui"))]
 pub mod ui;
 
 #[cfg(target_os = "windows")]

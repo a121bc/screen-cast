@@ -11,13 +11,13 @@ Keeping the render queue shallow ensures that stale frames are discarded instead
 ## Running
 
 ```bash
-cargo run -p receiver -- \
+cargo run -p receiver --features gui -- \
     --address 127.0.0.1:5000 \
     --render-queue 6 \
     --max-latency 450
 ```
 
-All CLI switches have matching JSON configuration keys. Provide `--config receiver.json` to load a file, and then override selected values on the command line.
+If you disable the `gui` feature the binary prints a reminder to rebuild with GUI support before exiting. All CLI switches have matching JSON configuration keys. Provide `--config receiver.json` to load a file, and then override selected values on the command line.
 
 ## Metrics
 

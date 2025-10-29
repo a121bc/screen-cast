@@ -5,7 +5,7 @@ fn main() {
     panic!("the sender binary is only supported on Windows targets");
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", feature = "gui"))]
 fn main() -> shared::AppResult<()> {
     use clap::Parser;
 
@@ -20,6 +20,24 @@ fn main() -> shared::AppResult<()> {
     } else {
         run_headless(config)
     }
+}
+
+#[cfg(all(target_os = "windows", not(feature = "gui")))]
+fn main() -> shared::AppResult<()> {
+    use clap::Parser;
+
+    shared::init_tracing()?;
+
+    let cli = sender::CliArgs::parse();
+    if cli.gui {
+        eprintln!(
+            "sender was built without GUI support. Re-run with `--features gui` to enable the interface."
+        );
+        return Ok(());
+    }
+
+    let config = sender::SenderConfig::from_cli(cli)?;
+    run_headless(config)
 }
 
 #[cfg(target_os = "windows")]

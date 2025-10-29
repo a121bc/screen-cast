@@ -5,7 +5,7 @@ fn main() {
     panic!("the receiver binary is only supported on Windows targets");
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", feature = "gui"))]
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> shared::AppResult<()> {
     use clap::Parser;
@@ -40,4 +40,11 @@ async fn main() -> shared::AppResult<()> {
     );
 
     Ok(())
+}
+
+#[cfg(all(target_os = "windows", not(feature = "gui")))]
+fn main() {
+    eprintln!(
+        "receiver was built without GUI support. Re-run with `--features gui` to enable the interface."
+    );
 }
