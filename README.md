@@ -107,13 +107,13 @@ The pipeline logs frames-per-second along with average and worst-case encode tim
 
 ### Graphical control surface
 
-Launch the interactive control surface with:
+The sender's GUI is gated behind the `gui` Cargo feature (enabled by default). To compile and launch the interface explicitly, run:
 
 ```bash
-cargo run -p sender -- --gui
+cargo run -p sender --features gui -- --gui
 ```
 
-The `egui` window exposes start/stop controls, lets you edit the network target, choose from common resolution presets (or supply a custom override), and switch between bitrate presets. Live plots visualise frames-per-second and encode latency so you can watch the pipeline stabilise in real time, while the status pane reports capture warnings and pipeline errors. The layout has been exercised at common Windows scale factors (100%, 150%, and 200%) to ensure controls remain legible.
+If you disable default features (for example, `cargo run -p sender --no-default-features`), the binary runs headlessly and prints a message when `--gui` is requested. The `egui` window exposes start/stop controls, lets you edit the network target, choose from common resolution presets (or supply a custom override), and switch between bitrate presets. Live plots visualise frames-per-second and encode latency so you can watch the pipeline stabilise in real time, while the status pane reports capture warnings and pipeline errors. The layout has been exercised at common Windows scale factors (100%, 150%, and 200%) to ensure controls remain legible.
 
 CLI mode remains the default; omit `--gui` to run the sender headlessly with the existing command-line arguments.
 
@@ -130,11 +130,13 @@ The `receiver` binary assembles the complementary pipeline that consumes UDP pac
 On a Windows host, start the pipeline with:
 
 ```bash
-cargo run -p receiver -- \
+cargo run -p receiver --features gui -- \
     --address 192.168.0.42:5000 \
     --render-queue 6 \
     --max-latency 450
 ```
+
+If you disable the `gui` feature the binary runs without the rendering surface and prints a reminder to rebuild with GUI support.
 
 Notable CLI options:
 
